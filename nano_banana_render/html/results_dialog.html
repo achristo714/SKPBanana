@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Render Results</title>
+<style>
+  :root {
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #16213e;
+    --bg-card: #1e2a47;
+    --bg-input: #0f1629;
+    --border: #2a3a5c;
+    --text-primary: #e8e8e8;
+    --text-secondary: #a0a8c0;
+    --text-muted: #6b7394;
+    --accent: #e94560;
+    --accent-hover: #ff6b81;
+    --accent-glow: rgba(233, 69, 96, 0.3);
+    --success: #2ed573;
+    --gradient-start: #e94560;
+    --gradient-end: #0abde3;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    padding: 20px;
+    overflow-y: auto;
+  }
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+
+  .header h1 {
+    font-size: 18px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-input);
+    border-radius: 8px;
+    padding: 3px;
+    margin-bottom: 16px;
+    overflow-x: auto;
+  }
+
+  .tab {
+    flex: 1;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    white-space: nowrap;
+  }
+
+  .tab.active {
+    background: var(--accent);
+    color: white;
+  }
+
+  .tab:hover:not(.active) {
+    color: var(--text-primary);
+    background: var(--bg-card);
+  }
+
+  .tab.error-tab {
+    color: #ff4757;
+  }
+
+  /* Comparison slider */
+  .comparison-container {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg-input);
+    cursor: ew-resize;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .comparison-container img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .img-before {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .img-before img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .img-after img {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+  }
+
+  .slider-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: white;
+    box-shadow: 0 0 8px rgba(0,0,0,0.5);
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .slider-handle {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 40px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    z-index: 11;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+
+  .slider-handle svg {
+    width: 20px;
+    height: 20px;
+    fill: var(--bg-primary);
+  }
+
+  .label-badge {
+    position: absolute;
+    top: 12px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  .label-before {
+    left: 12px;
+    background: rgba(26, 26, 46, 0.85);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+
+  .label-after {
+    right: 12px;
+    background: rgba(233, 69, 96, 0.85);
+    color: white;
+  }
+
+  .actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 18px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    flex: 1;
+  }
+
+  .btn-save {
+    background: linear-gradient(135deg, var(--gradient-start), var(--accent-hover));
+    color: white;
+  }
+
+  .btn-save:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px var(--accent-glow);
+  }
+
+  .btn-secondary {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+
+  .error-card {
+    background: rgba(255, 71, 87, 0.08);
+    border: 1px solid rgba(255, 71, 87, 0.3);
+    border-radius: 10px;
+    padding: 24px;
+    text-align: center;
+  }
+
+  .error-card h3 {
+    color: #ff4757;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  .error-card p {
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  .ai-note {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .ai-note strong {
+    color: var(--accent);
+  }
+
+  .result-panel { display: none; }
+  .result-panel.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Render Results</h1>
+</div>
+
+<div class="tabs" id="tabs"></div>
+<div id="panels"></div>
+
+<script>
+  let data = null;
+  let activeTab = 0;
+
+  function loadResults(payload) {
+    data = payload;
+    buildUI();
+  }
+
+  function buildUI() {
+    const tabsEl = document.getElementById('tabs');
+    const panelsEl = document.getElementById('panels');
+    tabsEl.innerHTML = '';
+    panelsEl.innerHTML = '';
+
+    data.renders.forEach((render, i) => {
+      // Tab
+      const tab = document.createElement('button');
+      tab.className = 'tab' + (i === 0 ? ' active' : '') + (!render.success ? ' error-tab' : '');
+      tab.textContent = render.success ? `Variation ${i + 1}` : `Variation ${i + 1} (Failed)`;
+      tab.onclick = () => switchTab(i);
+      tabsEl.appendChild(tab);
+
+      // Panel
+      const panel = document.createElement('div');
+      panel.className = 'result-panel' + (i === 0 ? ' active' : '');
+      panel.id = `panel-${i}`;
+
+      if (render.success) {
+        panel.innerHTML = `
+          <div class="comparison-container" id="comp-${i}"
+               onmousedown="startSlide(event, ${i})"
+               ontouchstart="startSlide(event, ${i})">
+            <div class="img-after">
+              <img src="data:image/png;base64,${render.image}" alt="Rendered" draggable="false">
+            </div>
+            <div class="img-before" id="before-${i}" style="width: 50%;">
+              <img src="data:image/png;base64,${data.original}" alt="Original" draggable="false">
+            </div>
+            <div class="slider-line" id="line-${i}" style="left: 50%;"></div>
+            <div class="slider-handle" id="handle-${i}" style="left: 50%;">
+              <svg viewBox="0 0 24 24"><path d="M8 5l-5 7 5 7M16 5l5 7-5 7"/></svg>
+            </div>
+            <span class="label-badge label-before">Original</span>
+            <span class="label-badge label-after">Rendered</span>
+          </div>
+          ${render.text ? `<div class="ai-note"><strong>AI Notes:</strong> ${escapeHtml(render.text)}</div>` : ''}
+          <div class="actions">
+            <button class="btn btn-save" onclick="saveImage(${i})">Save Image</button>
+          </div>
+        `;
+      } else {
+        panel.innerHTML = `
+          <div class="error-card">
+            <h3>Rendering Failed</h3>
+            <p>${escapeHtml(render.error)}</p>
+          </div>
+        `;
+      }
+
+      panelsEl.appendChild(panel);
+    });
+  }
+
+  function switchTab(index) {
+    activeTab = index;
+    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === index));
+    document.querySelectorAll('.result-panel').forEach((p, i) => p.classList.toggle('active', i === index));
+  }
+
+  // Comparison slider logic
+  let sliding = false;
+  let slideIndex = -1;
+
+  function startSlide(e, index) {
+    sliding = true;
+    slideIndex = index;
+    updateSlide(e);
+    e.preventDefault();
+  }
+
+  document.addEventListener('mousemove', (e) => { if (sliding) updateSlide(e); });
+  document.addEventListener('touchmove', (e) => { if (sliding) updateSlide(e); }, { passive: false });
+  document.addEventListener('mouseup', () => { sliding = false; slideIndex = -1; });
+  document.addEventListener('touchend', () => { sliding = false; slideIndex = -1; });
+
+  function updateSlide(e) {
+    if (slideIndex < 0) return;
+    const container = document.getElementById(`comp-${slideIndex}`);
+    const rect = container.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    let pct = ((clientX - rect.left) / rect.width) * 100;
+    pct = Math.max(0, Math.min(100, pct));
+
+    document.getElementById(`before-${slideIndex}`).style.width = pct + '%';
+    document.getElementById(`line-${slideIndex}`).style.left = pct + '%';
+    document.getElementById(`handle-${slideIndex}`).style.left = pct + '%';
+  }
+
+  function saveImage(index) {
+    const render = data.renders[index];
+    if (render && render.success) {
+      sketchup.save_image(render.image);
+    }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // Request results on load
+  document.addEventListener('DOMContentLoaded', () => {
+    sketchup.get_results();
+  });
+</script>
+</body>
+</html>

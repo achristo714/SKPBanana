@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nano Banana Pro Render</title>
+<style>
+  :root {
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #16213e;
+    --bg-card: #1e2a47;
+    --bg-input: #0f1629;
+    --border: #2a3a5c;
+    --border-focus: #e94560;
+    --text-primary: #e8e8e8;
+    --text-secondary: #a0a8c0;
+    --text-muted: #6b7394;
+    --accent: #e94560;
+    --accent-hover: #ff6b81;
+    --accent-glow: rgba(233, 69, 96, 0.3);
+    --success: #2ed573;
+    --error: #ff4757;
+    --warning: #ffa502;
+    --gradient-start: #e94560;
+    --gradient-end: #0abde3;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    padding: 20px;
+    overflow-y: auto;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 24px;
+  }
+
+  .header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 4px;
+  }
+
+  .header p {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+
+  label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+
+  input[type="text"], input[type="password"], textarea, select {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    font-family: inherit;
+  }
+
+  input:focus, textarea:focus, select:focus {
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 80px;
+    line-height: 1.5;
+  }
+
+  select {
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a0a8c0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 18px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--gradient-start), var(--accent-hover));
+    color: white;
+    width: 100%;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px var(--accent-glow);
+  }
+
+  .btn-primary:active { transform: translateY(0); }
+
+  .btn-secondary {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+
+  .btn-enhance {
+    background: linear-gradient(135deg, #0abde3, #48dbfb);
+    color: #1a1a2e;
+    font-size: 11px;
+    padding: 6px 12px;
+    border-radius: 6px;
+  }
+
+  .btn-enhance:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(10, 189, 227, 0.3);
+  }
+
+  .prompt-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+
+  .options-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .options-row > div { flex: 1; }
+
+  .status {
+    text-align: center;
+    font-size: 12px;
+    padding: 8px;
+    border-radius: 6px;
+    margin-top: 12px;
+    display: none;
+  }
+
+  .status.success {
+    display: block;
+    background: rgba(46, 213, 115, 0.1);
+    border: 1px solid rgba(46, 213, 115, 0.3);
+    color: var(--success);
+  }
+
+  .status.error {
+    display: block;
+    background: rgba(255, 71, 87, 0.1);
+    border: 1px solid rgba(255, 71, 87, 0.3);
+    color: var(--error);
+  }
+
+  .loading-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(26, 26, 46, 0.92);
+    z-index: 100;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+  }
+
+  .loading-overlay.active { display: flex; }
+
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .loading-sub {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .api-key-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .api-key-row input { flex: 1; }
+
+  .key-toggle {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0 10px;
+    font-size: 16px;
+    transition: color 0.2s;
+  }
+
+  .key-toggle:hover { color: var(--text-primary); }
+
+  .char-count {
+    text-align: right;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Nano Banana Pro Render</h1>
+  <p>AI-powered rendering for SketchUp</p>
+</div>
+
+<div class="section">
+  <div class="section-title">API Configuration</div>
+  <label>Google AI API Key</label>
+  <div class="api-key-row">
+    <input type="password" id="apiKey" placeholder="Enter your Gemini API key...">
+    <button class="key-toggle" onclick="toggleKeyVisibility()" title="Show/Hide">&#128065;</button>
+    <button class="btn btn-secondary" onclick="saveApiKey()">Save</button>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Render Prompt</div>
+  <div class="prompt-header">
+    <label style="margin:0">Describe your desired render</label>
+    <button class="btn btn-enhance" onclick="enhancePrompt()">Enhance Prompt</button>
+  </div>
+  <textarea id="prompt" placeholder="e.g. Photorealistic exterior render, golden hour lighting, lush landscaping, warm tones..."></textarea>
+  <div class="char-count"><span id="charCount">0</span> chars</div>
+
+  <div class="options-row">
+    <div>
+      <label>Variations</label>
+      <select id="numOptions">
+        <option value="1">1 option</option>
+        <option value="2" selected>2 options</option>
+        <option value="3">3 options</option>
+        <option value="4">4 options</option>
+      </select>
+    </div>
+    <div>
+      <label>Model</label>
+      <select id="model">
+        <option value="gemini-3-pro-image-preview">Nano Banana Pro</option>
+        <option value="gemini-3.1-flash-image-preview">Nano Banana 2 (Fast)</option>
+        <option value="gemini-2.5-flash-image">Nano Banana (Legacy)</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<button class="btn btn-primary" onclick="startRender()">
+  Capture View &amp; Render
+</button>
+
+<div class="status" id="status"></div>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text">Rendering with Nano Banana Pro...</div>
+  <div class="loading-sub">This may take 15-60 seconds per variation</div>
+</div>
+
+<script>
+  const promptEl = document.getElementById('prompt');
+  const charCountEl = document.getElementById('charCount');
+
+  promptEl.addEventListener('input', () => {
+    charCountEl.textContent = promptEl.value.length;
+  });
+
+  function toggleKeyVisibility() {
+    const input = document.getElementById('apiKey');
+    input.type = input.type === 'password' ? 'text' : 'password';
+  }
+
+  function saveApiKey() {
+    const key = document.getElementById('apiKey').value.trim();
+    if (!key) return showStatus('Please enter an API key', 'error');
+    sketchup.save_api_key(key);
+  }
+
+  function enhancePrompt() {
+    const prompt = promptEl.value.trim();
+    if (!prompt) return showStatus('Type a prompt first', 'error');
+    showStatus('Enhancing prompt...', 'success');
+    sketchup.enhance_prompt(prompt);
+  }
+
+  function setEnhancedPrompt(enhanced) {
+    promptEl.value = enhanced;
+    charCountEl.textContent = enhanced.length;
+    showStatus('Prompt enhanced!', 'success');
+    setTimeout(() => hideStatus(), 2000);
+  }
+
+  function startRender() {
+    const prompt = promptEl.value.trim();
+    if (!prompt) return showStatus('Enter a render prompt', 'error');
+    const numOptions = document.getElementById('numOptions').value;
+    sketchup.render(prompt, numOptions);
+  }
+
+  function setConfig(cfg) {
+    if (cfg.api_key) document.getElementById('apiKey').value = cfg.api_key;
+    if (cfg.num_options) document.getElementById('numOptions').value = cfg.num_options;
+    if (cfg.model) document.getElementById('model').value = cfg.model;
+    if (cfg.last_prompt) {
+      promptEl.value = cfg.last_prompt;
+      charCountEl.textContent = cfg.last_prompt.length;
+    }
+  }
+
+  function setLoading(active) {
+    document.getElementById('loadingOverlay').classList.toggle('active', active);
+  }
+
+  function showStatus(msg, type) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = 'status ' + type;
+  }
+
+  function hideStatus() {
+    document.getElementById('status').className = 'status';
+  }
+
+  // Request config on load
+  document.addEventListener('DOMContentLoaded', () => {
+    sketchup.get_config();
+  });
+</script>
+</body>
+</html>
