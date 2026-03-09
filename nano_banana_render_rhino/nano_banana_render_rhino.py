@@ -7,6 +7,7 @@ import os
 import json
 import base64
 import time
+import threading
 
 import Rhino
 import Rhino.UI
@@ -16,21 +17,6 @@ import System.IO as IO
 
 import Eto.Forms as Forms
 import Eto.Drawing as EtoDrawing
-
-# -- Theme Colors -------------------------------------------------------------
-
-class Theme:
-    BG_PRIMARY = EtoDrawing.Color.FromArgb(26, 26, 46)
-    BG_CARD = EtoDrawing.Color.FromArgb(30, 42, 71)
-    BG_INPUT = EtoDrawing.Color.FromArgb(15, 22, 41)
-    BORDER = EtoDrawing.Color.FromArgb(42, 58, 92)
-    TEXT = EtoDrawing.Color.FromArgb(232, 232, 232)
-    TEXT_DIM = EtoDrawing.Color.FromArgb(160, 168, 192)
-    TEXT_MUTED = EtoDrawing.Color.FromArgb(107, 115, 148)
-    ACCENT = EtoDrawing.Color.FromArgb(233, 69, 96)
-    ACCENT_CYAN = EtoDrawing.Color.FromArgb(10, 189, 227)
-    SUCCESS = EtoDrawing.Color.FromArgb(46, 213, 115)
-    ERROR = EtoDrawing.Color.FromArgb(255, 71, 87)
 
 # -- Config ------------------------------------------------------------------
 
@@ -45,10 +31,10 @@ DEFAULT_CONFIG = {
     'last_prompt': ''
 }
 
-MODELS = [
-    ('gemini-2.5-flash-image', 'Nano Banana (Stable)'),
-    ('gemini-3.1-flash-image-preview', 'Nano Banana 2 (Latest)'),
-]
+MODELS = {
+    'gemini-2.5-flash-image': 'Nano Banana (Stable)',
+    'gemini-3.1-flash-image-preview': 'Nano Banana 2 (Latest)',
+}
 
 
 def load_config():
@@ -82,7 +68,6 @@ def capture_viewport():
     if view is None:
         raise Exception("No active viewport found")
 
-    # Use native viewport size to avoid crash on large monitors
     bitmap = view.CaptureToBitmap()
     if bitmap is None:
         raise Exception("Failed to capture viewport")
@@ -173,7 +158,7 @@ def call_gemini_api(api_key, model, prompt, image_base64, variation_index=0):
         return {'success': False, 'error': str(e)}
 
 
-def enhance_prompt(api_key, base_prompt):
+def enhance_prompt_api(api_key, base_prompt):
     try:
         url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}".format(api_key)
 
@@ -216,307 +201,540 @@ def enhance_prompt(api_key, base_prompt):
         return base_prompt
 
 
-# -- Dark Themed Panel Helper -------------------------------------------------
+# -- HTML Templates -----------------------------------------------------------
 
-def make_dark_panel(content, padding=12):
-    panel = Forms.Panel()
-    panel.BackgroundColor = Theme.BG_CARD
-    panel.Padding = EtoDrawing.Padding(padding)
-    panel.Content = content
-    return panel
+PROMPT_HTML = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root {
+    --bg-primary: #1a1a2e;
+    --bg-card: #1e2a47;
+    --bg-input: #0f1629;
+    --border: #2a3a5c;
+    --border-focus: #e94560;
+    --text-primary: #e8e8e8;
+    --text-secondary: #a0a8c0;
+    --text-muted: #6b7394;
+    --accent: #e94560;
+    --accent-hover: #ff6b81;
+    --accent-glow: rgba(233, 69, 96, 0.3);
+    --success: #2ed573;
+    --error: #ff4757;
+    --gradient-start: #e94560;
+    --gradient-end: #0abde3;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    padding: 20px;
+    overflow-y: auto;
+  }
+  .header { text-align: center; margin-bottom: 24px; }
+  .header h1 {
+    font-size: 20px; font-weight: 700;
+    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    margin-bottom: 4px;
+  }
+  .header p { font-size: 12px; color: var(--text-muted); }
+  .section {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; margin-bottom: 16px;
+  }
+  .section-title {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1.2px; color: var(--text-muted); margin-bottom: 10px;
+  }
+  label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 500; }
+  input[type="text"], input[type="password"], textarea, select {
+    width: 100%; background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text-primary); font-size: 13px;
+    padding: 10px 12px; outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+    font-family: inherit;
+  }
+  input:focus, textarea:focus, select:focus {
+    border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+  select {
+    cursor: pointer; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a0a8c0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px;
+  }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 10px 18px; border: none; border-radius: 8px; font-size: 13px;
+    font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--gradient-start), var(--accent-hover));
+    color: white; width: 100%;
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px var(--accent-glow); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-secondary { background: var(--bg-input); border: 1px solid var(--border); color: var(--text-secondary); }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--text-primary); }
+  .btn-enhance {
+    background: linear-gradient(135deg, #0abde3, #48dbfb); color: #1a1a2e;
+    font-size: 11px; padding: 6px 12px; border-radius: 6px;
+  }
+  .btn-enhance:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(10, 189, 227, 0.3); }
+  .prompt-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .options-row { display: flex; gap: 12px; margin-top: 12px; }
+  .options-row > div { flex: 1; }
+  .status {
+    text-align: center; font-size: 12px; padding: 8px; border-radius: 6px;
+    margin-top: 12px; display: none;
+  }
+  .status.success { display: block; background: rgba(46,213,115,0.1); border: 1px solid rgba(46,213,115,0.3); color: var(--success); }
+  .status.error { display: block; background: rgba(255,71,87,0.1); border: 1px solid rgba(255,71,87,0.3); color: var(--error); }
+  .loading-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(26,26,46,0.92);
+    z-index: 100; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  }
+  .loading-overlay.active { display: flex; }
+  .spinner { width: 48px; height: 48px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { color: var(--text-secondary); font-size: 14px; font-weight: 500; }
+  .loading-sub { color: var(--text-muted); font-size: 12px; }
+  .api-key-row { display: flex; gap: 8px; }
+  .api-key-row input { flex: 1; }
+  .key-toggle { background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--text-muted); cursor: pointer; padding: 0 10px; font-size: 14px; transition: color 0.2s; }
+  .key-toggle:hover { color: var(--text-primary); }
+  .char-count { text-align: right; font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  .hint { text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 10px; font-style: italic; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Nano Banana Pro Render</h1>
+  <p>AI-powered rendering for Rhino</p>
+</div>
+<div class="section">
+  <div class="section-title">API Configuration</div>
+  <label>Google AI API Key</label>
+  <div class="api-key-row">
+    <input type="password" id="apiKey" placeholder="Enter your Gemini API key...">
+    <button class="key-toggle" onclick="toggleKey()" title="Show/Hide">&#x1f441;</button>
+    <button class="btn btn-secondary" onclick="doAction('save_key',{key:document.getElementById('apiKey').value.trim()})">Save</button>
+  </div>
+</div>
+<div class="section">
+  <div class="section-title">Render Prompt</div>
+  <div class="prompt-header">
+    <label style="margin:0">Describe your desired render</label>
+    <button class="btn btn-enhance" onclick="doAction('enhance',{prompt:document.getElementById('prompt').value.trim()})">Enhance Prompt</button>
+  </div>
+  <textarea id="prompt" placeholder="e.g. Photorealistic exterior render, golden hour lighting, lush landscaping..."></textarea>
+  <div class="char-count"><span id="charCount">0</span> chars</div>
+  <div class="options-row">
+    <div>
+      <label>Variations</label>
+      <select id="numOptions">
+        <option value="1">1 option</option>
+        <option value="2" selected>2 options</option>
+        <option value="3">3 options</option>
+        <option value="4">4 options</option>
+      </select>
+    </div>
+    <div>
+      <label>Model</label>
+      <select id="model">
+        <option value="gemini-2.5-flash-image">Nano Banana (Stable)</option>
+        <option value="gemini-3.1-flash-image-preview">Nano Banana 2 (Latest)</option>
+      </select>
+    </div>
+  </div>
+</div>
+<button class="btn btn-primary" id="renderBtn" onclick="startRender()">Capture View &amp; Render</button>
+<div class="hint">Position your camera in Rhino, then click Capture View & Render</div>
+<div class="status" id="status"></div>
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loadingText">Capturing viewport...</div>
+  <div class="loading-sub">This may take 15-60 seconds per variation</div>
+</div>
+<script>
+  var promptEl = document.getElementById('prompt');
+  var charCountEl = document.getElementById('charCount');
+  promptEl.addEventListener('input', function() { charCountEl.textContent = promptEl.value.length; });
+
+  function toggleKey() {
+    var input = document.getElementById('apiKey');
+    input.type = input.type === 'password' ? 'text' : 'password';
+  }
+
+  function doAction(action, data) {
+    window.location.href = 'nano://' + action + '/' + encodeURIComponent(JSON.stringify(data || {}));
+  }
+
+  function startRender() {
+    var prompt = promptEl.value.trim();
+    if (!prompt) { showStatus('Enter a render prompt', 'error'); return; }
+    doAction('render', {
+      prompt: prompt,
+      num: document.getElementById('numOptions').value,
+      model: document.getElementById('model').value
+    });
+  }
+
+  function setConfig(cfg) {
+    if (cfg.api_key) document.getElementById('apiKey').value = cfg.api_key;
+    if (cfg.num_options) document.getElementById('numOptions').value = cfg.num_options;
+    if (cfg.model) document.getElementById('model').value = cfg.model;
+    if (cfg.last_prompt) { promptEl.value = cfg.last_prompt; charCountEl.textContent = cfg.last_prompt.length; }
+  }
+
+  function setLoading(active, msg) {
+    document.getElementById('loadingOverlay').classList.toggle('active', active);
+    document.getElementById('renderBtn').disabled = active;
+    if (msg) document.getElementById('loadingText').textContent = msg;
+  }
+
+  function setEnhancedPrompt(text) {
+    promptEl.value = text;
+    charCountEl.textContent = text.length;
+    showStatus('Prompt enhanced!', 'success');
+    setTimeout(hideStatus, 2000);
+  }
+
+  function showStatus(msg, type) {
+    var el = document.getElementById('status');
+    el.textContent = msg; el.className = 'status ' + type;
+  }
+  function hideStatus() { document.getElementById('status').className = 'status'; }
+</script>
+</body>
+</html>'''
 
 
-def styled_label(text, color=None, bold=False, size=12):
-    label = Forms.Label()
-    label.Text = text
-    label.TextColor = color or Theme.TEXT
-    if bold:
-        label.Font = EtoDrawing.Font(EtoDrawing.FontFamilies.SansFamilyName, size, EtoDrawing.FontStyle.Bold)
-    else:
-        label.Font = EtoDrawing.Font(EtoDrawing.FontFamilies.SansFamilyName, size)
-    return label
+RESULTS_HTML = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root {
+    --bg-primary: #1a1a2e; --bg-card: #1e2a47; --bg-input: #0f1629;
+    --border: #2a3a5c; --text-primary: #e8e8e8; --text-secondary: #a0a8c0;
+    --text-muted: #6b7394; --accent: #e94560; --accent-hover: #ff6b81;
+    --accent-glow: rgba(233,69,96,0.3); --success: #2ed573;
+    --gradient-start: #e94560; --gradient-end: #0abde3;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-primary); color: var(--text-primary); padding: 20px; overflow-y: auto; }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .header h1 { font-size: 18px; font-weight: 700; background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .tabs { display: flex; gap: 4px; background: var(--bg-input); border-radius: 8px; padding: 3px; margin-bottom: 16px; overflow-x: auto; }
+  .tab { flex: 1; padding: 8px 16px; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; white-space: nowrap; }
+  .tab.active { background: var(--accent); color: white; }
+  .tab:hover:not(.active) { color: var(--text-primary); background: var(--bg-card); }
+  .tab.error-tab { color: #ff4757; }
+  .render-img { width: 100%; border-radius: 10px; border: 1px solid var(--border); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; flex: 1; }
+  .btn-save { background: linear-gradient(135deg, var(--gradient-start), var(--accent-hover)); color: white; }
+  .btn-save:hover { transform: translateY(-1px); box-shadow: 0 4px 15px var(--accent-glow); }
+  .actions { display: flex; gap: 8px; margin-top: 16px; }
+  .error-card { background: rgba(255,71,87,0.08); border: 1px solid rgba(255,71,87,0.3); border-radius: 10px; padding: 24px; text-align: center; }
+  .error-card h3 { color: #ff4757; font-size: 14px; margin-bottom: 8px; }
+  .error-card p { color: var(--text-muted); font-size: 13px; }
+  .ai-note { margin-top: 12px; padding: 10px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+  .ai-note strong { color: var(--accent); }
+  .result-panel { display: none; }
+  .result-panel.active { display: block; }
+</style>
+</head>
+<body>
+<div class="header"><h1>Render Results</h1></div>
+<div class="tabs" id="tabs"></div>
+<div id="panels"></div>
+<script>
+  var data = null;
+  function loadResults(payload) { data = payload; buildUI(); }
+
+  function buildUI() {
+    var tabsEl = document.getElementById('tabs');
+    var panelsEl = document.getElementById('panels');
+    tabsEl.innerHTML = ''; panelsEl.innerHTML = '';
+    data.renders.forEach(function(render, i) {
+      var tab = document.createElement('button');
+      tab.className = 'tab' + (i === 0 ? ' active' : '') + (!render.success ? ' error-tab' : '');
+      tab.textContent = render.success ? 'Variation ' + (i+1) : 'Variation ' + (i+1) + ' (Failed)';
+      tab.onclick = function() { switchTab(i); };
+      tabsEl.appendChild(tab);
+
+      var panel = document.createElement('div');
+      panel.className = 'result-panel' + (i === 0 ? ' active' : '');
+      panel.id = 'panel-' + i;
+
+      if (render.success) {
+        panel.innerHTML = '<img class="render-img" src="data:image/png;base64,' + render.image + '">'
+          + (render.text ? '<div class="ai-note"><strong>AI Notes:</strong> ' + escapeHtml(render.text) + '</div>' : '')
+          + '<div class="actions"><button class="btn btn-save" onclick="doAction(\'save\',' + i + ')">Save Image</button></div>';
+      } else {
+        panel.innerHTML = '<div class="error-card"><h3>Rendering Failed</h3><p>' + escapeHtml(render.error) + '</p></div>';
+      }
+      panelsEl.appendChild(panel);
+    });
+  }
+
+  function switchTab(index) {
+    document.querySelectorAll('.tab').forEach(function(t, i) { t.classList.toggle('active', i === index); });
+    document.querySelectorAll('.result-panel').forEach(function(p, i) { p.classList.toggle('active', i === index); });
+  }
+
+  function doAction(action, idx) {
+    window.location.href = 'nano://' + action + '/' + idx;
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+</script>
+</body>
+</html>'''
 
 
-def styled_button(text, accent=False):
-    btn = Forms.Button()
-    btn.Text = text
-    btn.Height = 32
-    return btn
+# -- WebView Dialog -----------------------------------------------------------
 
-
-# -- Results Dialog -----------------------------------------------------------
-
-class ResultsDialog(Forms.Form):
-    def __init__(self, original_b64, results):
-        self.Title = "Render Results - Nano Banana Pro"
-        self.ClientSize = EtoDrawing.Size(920, 680)
-        self.Resizable = True
-        self.BackgroundColor = Theme.BG_PRIMARY
-        self.original_b64 = original_b64
-        self.results = results
-        self._build_ui()
-
-    def _build_ui(self):
-        layout = Forms.DynamicLayout()
-        layout.DefaultSpacing = EtoDrawing.Size(10, 10)
-        layout.Padding = EtoDrawing.Padding(20)
-
-        # Header
-        layout.AddRow(styled_label("Render Results", Theme.ACCENT, bold=True, size=18))
-        layout.AddRow(styled_label("Compare your AI-rendered variations below", Theme.TEXT_MUTED, size=11))
-        layout.AddRow(None)
-
-        # Tabs
-        self.tab_control = Forms.TabControl()
-
-        for i, result in enumerate(self.results):
-            page = Forms.TabPage()
-            page.Text = "  Variation {}  ".format(i + 1) if result['success'] else "  Variation {} (Failed)  ".format(i + 1)
-
-            page_layout = Forms.DynamicLayout()
-            page_layout.DefaultSpacing = EtoDrawing.Size(8, 8)
-            page_layout.Padding = EtoDrawing.Padding(16)
-
-            if result['success']:
-                render_b64 = image_to_base64(result['path'])
-                img_bytes = System.Convert.FromBase64String(render_b64)
-                stream = IO.MemoryStream(img_bytes)
-                eto_image = EtoDrawing.Bitmap(stream)
-
-                image_view = Forms.ImageView()
-                image_view.Image = eto_image
-
-                page_layout.AddRow(image_view)
-
-                if result.get('text'):
-                    note_label = styled_label("AI Notes: {}".format(result['text']), Theme.TEXT_DIM, size=11)
-                    note_label.Wrap = Forms.WrapMode.Word
-                    page_layout.AddRow(make_dark_panel(note_label, 10))
-
-                save_btn = styled_button("Save Image")
-                save_btn.Tag = result['path']
-                save_btn.Click += self._on_save
-                page_layout.AddRow(save_btn)
-            else:
-                err_layout = Forms.DynamicLayout()
-                err_layout.DefaultSpacing = EtoDrawing.Size(4, 8)
-                err_layout.Padding = EtoDrawing.Padding(20)
-                err_layout.AddRow(styled_label("Rendering Failed", Theme.ERROR, bold=True, size=14))
-                err_msg = styled_label(result.get('error', 'Unknown error'), Theme.TEXT_DIM, size=11)
-                err_msg.Wrap = Forms.WrapMode.Word
-                err_layout.AddRow(err_msg)
-                page_layout.AddRow(make_dark_panel(err_layout))
-
-            page_layout.AddRow(None)
-            page.Content = page_layout
-            self.tab_control.Pages.Add(page)
-
-        layout.AddRow(self.tab_control)
-        self.Content = layout
-
-    def _on_save(self, sender, e):
-        source_path = sender.Tag
-        dialog = Forms.SaveFileDialog()
-        dialog.Title = "Save Rendered Image"
-        dialog.Filters.Add(Forms.FileFilter("PNG Images", ".png"))
-        if dialog.ShowDialog(self) == Forms.DialogResult.Ok:
-            dest = dialog.FileName
-            if not dest.endswith('.png'):
-                dest += '.png'
-            System.IO.File.Copy(source_path, dest, True)
-            Forms.MessageBox.Show(self, "Image saved to:\n{}".format(dest), "Saved")
-
-
-# -- Main Prompt Dialog (Modeless - you can move the camera!) -----------------
-
-class PromptDialog(Forms.Form):
+class NanoBananaForm(Forms.Form):
     def __init__(self):
         self.config = load_config()
         self.Title = "Nano Banana Pro Render"
-        self.ClientSize = EtoDrawing.Size(440, 560)
+        self.ClientSize = EtoDrawing.Size(520, 640)
         self.Resizable = True
-        self.BackgroundColor = Theme.BG_PRIMARY
-        self._build_ui()
 
-    def _build_ui(self):
-        layout = Forms.DynamicLayout()
-        layout.DefaultSpacing = EtoDrawing.Size(6, 6)
-        layout.Padding = EtoDrawing.Padding(20)
+        self.webview = Forms.WebView()
+        self.webview.DocumentLoading += self._on_navigate
+        self.Content = self.webview
+        self.webview.LoadHtml(PROMPT_HTML)
 
-        # ---- Header ----
-        layout.AddRow(styled_label("Nano Banana Pro Render", Theme.ACCENT, bold=True, size=18))
-        layout.AddRow(styled_label("AI-powered rendering for Rhino", Theme.TEXT_MUTED, size=11))
-        layout.AddRow(None)
+        # Push saved config after a short delay
+        self.Shown += self._on_shown
 
-        # ---- API Key Card ----
-        key_layout = Forms.DynamicLayout()
-        key_layout.DefaultSpacing = EtoDrawing.Size(6, 6)
+    def _on_shown(self, sender, e):
+        try:
+            cfg_json = json.dumps(self.config).replace('\\', '\\\\').replace("'", "\\'")
+            self.webview.ExecuteScript("setConfig({})".format(json.dumps(self.config)))
+        except Exception:
+            pass
 
-        key_layout.AddRow(styled_label("API CONFIGURATION", Theme.TEXT_MUTED, bold=True, size=9))
-        key_layout.AddRow(styled_label("Google AI API Key", Theme.TEXT_DIM, size=11))
+    def _run_on_ui(self, func):
+        Forms.Application.Instance.AsyncInvoke(func)
 
-        key_row = Forms.DynamicLayout()
-        key_row.DefaultSpacing = EtoDrawing.Size(6, 0)
-        self.api_key_input = Forms.PasswordBox()
-        self.api_key_input.Text = self.config.get('api_key', '')
+    def _exec_js(self, script):
+        self._run_on_ui(lambda: self.webview.ExecuteScript(script))
 
-        save_key_btn = styled_button("Save")
-        save_key_btn.Width = 60
-        save_key_btn.Click += self._on_save_key
-
-        key_row.AddRow(self.api_key_input, save_key_btn)
-        key_layout.AddRow(key_row)
-
-        layout.AddRow(make_dark_panel(key_layout))
-        layout.AddRow(None)
-
-        # ---- Prompt Card ----
-        prompt_layout = Forms.DynamicLayout()
-        prompt_layout.DefaultSpacing = EtoDrawing.Size(6, 6)
-
-        prompt_layout.AddRow(styled_label("RENDER PROMPT", Theme.TEXT_MUTED, bold=True, size=9))
-
-        prompt_header = Forms.DynamicLayout()
-        prompt_header.DefaultSpacing = EtoDrawing.Size(6, 0)
-        enhance_btn = styled_button("Enhance Prompt")
-        enhance_btn.Click += self._on_enhance
-        prompt_header.AddRow(styled_label("Describe your desired render", Theme.TEXT_DIM, size=11), None, enhance_btn)
-        prompt_layout.AddRow(prompt_header)
-
-        self.prompt_input = Forms.TextArea()
-        self.prompt_input.Height = 90
-        self.prompt_input.Text = self.config.get('last_prompt', '')
-        self.prompt_input.BackgroundColor = Theme.BG_INPUT
-        self.prompt_input.TextColor = Theme.TEXT
-        prompt_layout.AddRow(self.prompt_input)
-
-        # Options
-        options_row = Forms.DynamicLayout()
-        options_row.DefaultSpacing = EtoDrawing.Size(12, 0)
-
-        var_layout = Forms.DynamicLayout()
-        var_layout.DefaultSpacing = EtoDrawing.Size(0, 4)
-        var_layout.AddRow(styled_label("Variations", Theme.TEXT_DIM, size=11))
-        self.num_options = Forms.DropDown()
-        for n in range(1, 5):
-            self.num_options.Items.Add("{} option{}".format(n, 's' if n > 1 else ''))
-        self.num_options.SelectedIndex = min(self.config.get('num_options', 2) - 1, 3)
-        var_layout.AddRow(self.num_options)
-
-        model_layout = Forms.DynamicLayout()
-        model_layout.DefaultSpacing = EtoDrawing.Size(0, 4)
-        model_layout.AddRow(styled_label("Model", Theme.TEXT_DIM, size=11))
-        self.model_dropdown = Forms.DropDown()
-        current_model = self.config.get('model', MODELS[0][0])
-        selected_idx = 0
-        for idx, (model_id, model_name) in enumerate(MODELS):
-            self.model_dropdown.Items.Add(model_name)
-            if model_id == current_model:
-                selected_idx = idx
-        self.model_dropdown.SelectedIndex = selected_idx
-        model_layout.AddRow(self.model_dropdown)
-
-        options_row.AddRow(var_layout, model_layout)
-        prompt_layout.AddRow(options_row)
-
-        layout.AddRow(make_dark_panel(prompt_layout))
-        layout.AddRow(None)
-
-        # ---- Render Button ----
-        render_btn = Forms.Button()
-        render_btn.Text = "Capture View & Render"
-        render_btn.Height = 40
-        render_btn.Click += self._on_render
-        layout.AddRow(render_btn)
-
-        # ---- Hint ----
-        hint = styled_label("Move your camera freely, then click Capture View & Render", Theme.TEXT_MUTED, size=10)
-        hint.TextAlignment = Forms.TextAlignment.Center
-        layout.AddRow(hint)
-
-        # ---- Status ----
-        self.status_label = Forms.Label()
-        self.status_label.Text = ""
-        self.status_label.TextColor = Theme.SUCCESS
-        layout.AddRow(self.status_label)
-
-        layout.AddRow(None)
-        self.Content = layout
-
-    def _set_status(self, msg, is_error=False):
-        self.status_label.Text = msg
-        self.status_label.TextColor = Theme.ERROR if is_error else Theme.SUCCESS
-
-    def _on_save_key(self, sender, e):
-        key = self.api_key_input.Text.strip() if self.api_key_input.Text else ''
-        if not key:
-            self._set_status("Please enter an API key", True)
+    def _on_navigate(self, sender, e):
+        url = e.Uri.ToString() if e.Uri else ''
+        if not url.startswith('nano://'):
             return
-        self.config['api_key'] = key
-        save_config(self.config)
-        self._set_status("API key saved")
+        e.Cancel = True
 
-    def _on_enhance(self, sender, e):
-        prompt = self.prompt_input.Text.strip()
-        if not prompt:
-            self._set_status("Type a prompt first", True)
-            return
-        api_key = self.config.get('api_key', '')
-        if not api_key:
-            self._set_status("Set your API key first", True)
-            return
-        self._set_status("Enhancing prompt...")
-        enhanced = enhance_prompt(api_key, prompt)
-        self.prompt_input.Text = enhanced
-        self._set_status("Prompt enhanced!")
-
-    def _on_render(self, sender, e):
-        prompt = self.prompt_input.Text.strip()
-        if not prompt:
-            self._set_status("Enter a render prompt", True)
-            return
-
-        api_key = self.config.get('api_key', '')
-        if not api_key:
-            self._set_status("Set your API key first", True)
-            return
-
-        num = self.num_options.SelectedIndex + 1
-        model_id = MODELS[self.model_dropdown.SelectedIndex][0]
-
-        self.config['num_options'] = num
-        self.config['last_prompt'] = prompt
-        self.config['model'] = model_id
-        save_config(self.config)
-
-        self._set_status("Capturing viewport...")
+        parts = url.replace('nano://', '').split('/', 1)
+        action = parts[0]
+        payload_str = parts[1] if len(parts) > 1 else '{}'
 
         try:
-            capture_path = capture_viewport()
-            image_b64 = image_to_base64(capture_path)
+            import sys
+            if sys.version_info[0] >= 3:
+                from urllib.parse import unquote
+            else:
+                from urllib import unquote
+            payload_str = unquote(payload_str)
+        except Exception:
+            pass
+
+        if action == 'save_key':
+            self._handle_save_key(payload_str)
+        elif action == 'enhance':
+            self._handle_enhance(payload_str)
+        elif action == 'render':
+            self._handle_render(payload_str)
+
+    def _handle_save_key(self, payload_str):
+        try:
+            data = json.loads(payload_str)
+            key = data.get('key', '').strip()
+            if not key:
+                self._exec_js("showStatus('Please enter an API key','error')")
+                return
+            self.config['api_key'] = key
+            save_config(self.config)
+            self._exec_js("showStatus('API key saved','success')")
         except Exception as ex:
-            self._set_status("Capture failed: {}".format(str(ex)), True)
+            self._exec_js("showStatus('Error: {}','error')".format(str(ex).replace("'", "\\'")))
+
+    def _handle_enhance(self, payload_str):
+        try:
+            data = json.loads(payload_str)
+            prompt = data.get('prompt', '').strip()
+            if not prompt:
+                self._exec_js("showStatus('Type a prompt first','error')")
+                return
+            api_key = self.config.get('api_key', '')
+            if not api_key:
+                self._exec_js("showStatus('Set your API key first','error')")
+                return
+        except Exception:
             return
 
-        results = []
-        for i in range(num):
-            self._set_status("Rendering variation {} of {}...".format(i + 1, num))
-            result = call_gemini_api(api_key, model_id, prompt, image_b64, i)
-            results.append(result)
+        self._exec_js("showStatus('Enhancing prompt...','success')")
 
-        self._set_status("Done!")
+        def do_enhance():
+            enhanced = enhance_prompt_api(api_key, prompt)
+            escaped = json.dumps(enhanced)
+            self._exec_js("setEnhancedPrompt({})".format(escaped))
 
-        results_dlg = ResultsDialog(image_b64, results)
-        results_dlg.Owner = self
-        results_dlg.Show()
+        threading.Thread(target=do_enhance).start()
+
+    def _handle_render(self, payload_str):
+        try:
+            data = json.loads(payload_str)
+            prompt = data.get('prompt', '').strip()
+            num = int(data.get('num', 2))
+            model = data.get('model', 'gemini-2.5-flash-image')
+        except Exception:
+            return
+
+        api_key = self.config.get('api_key', '')
+        if not api_key:
+            self._exec_js("showStatus('Set your API key first','error')")
+            return
+
+        num = max(1, min(4, num))
+        self.config['num_options'] = num
+        self.config['last_prompt'] = prompt
+        self.config['model'] = model
+        save_config(self.config)
+
+        self._exec_js("setLoading(true,'Capturing viewport...')")
+
+        def do_render():
+            try:
+                # Capture must run on UI thread
+                capture_result = [None, None]
+
+                def do_capture():
+                    try:
+                        capture_result[0] = capture_viewport()
+                    except Exception as ex:
+                        capture_result[1] = str(ex)
+
+                Forms.Application.Instance.Invoke(do_capture)
+
+                if capture_result[1]:
+                    self._exec_js("setLoading(false)")
+                    self._exec_js("showStatus('Capture failed: {}','error')".format(
+                        capture_result[1].replace("'", "\\'")))
+                    return
+
+                capture_path = capture_result[0]
+                image_b64 = image_to_base64(capture_path)
+
+                results = []
+                for i in range(num):
+                    self._exec_js("setLoading(true,'Rendering variation {} of {}...')".format(i + 1, num))
+                    result = call_gemini_api(api_key, model, prompt, image_b64, i)
+                    results.append(result)
+
+                # Build results payload
+                render_data = []
+                for r in results:
+                    if r['success']:
+                        render_data.append({
+                            'success': True,
+                            'image': image_to_base64(r['path']),
+                            'text': r.get('text', '')
+                        })
+                    else:
+                        render_data.append({
+                            'success': False,
+                            'error': r.get('error', 'Unknown error')
+                        })
+
+                payload = {'original': image_b64, 'renders': render_data}
+
+                self._exec_js("setLoading(false)")
+
+                # Show results in new window
+                def show_results():
+                    results_form = ResultsForm(payload)
+                    results_form.Owner = self
+                    results_form.Show()
+
+                self._run_on_ui(show_results)
+
+            except Exception as ex:
+                self._exec_js("setLoading(false)")
+                self._exec_js("showStatus('Error: {}','error')".format(
+                    str(ex).replace("'", "\\'")))
+
+        threading.Thread(target=do_render).start()
+
+
+class ResultsForm(Forms.Form):
+    def __init__(self, payload):
+        self.Title = "Render Results - Nano Banana Pro"
+        self.ClientSize = EtoDrawing.Size(950, 700)
+        self.Resizable = True
+        self.payload = payload
+        self.render_data = payload.get('renders', [])
+
+        self.webview = Forms.WebView()
+        self.webview.DocumentLoading += self._on_navigate
+        self.Content = self.webview
+        self.webview.LoadHtml(RESULTS_HTML)
+        self.Shown += self._on_shown
+
+    def _on_shown(self, sender, e):
+        try:
+            payload_json = json.dumps(self.payload)
+            self.webview.ExecuteScript("loadResults({})".format(payload_json))
+        except Exception:
+            pass
+
+    def _on_navigate(self, sender, e):
+        url = e.Uri.ToString() if e.Uri else ''
+        if not url.startswith('nano://'):
+            return
+        e.Cancel = True
+
+        parts = url.replace('nano://', '').split('/', 1)
+        action = parts[0]
+
+        if action == 'save':
+            try:
+                idx = int(parts[1]) if len(parts) > 1 else 0
+                render = self.render_data[idx]
+                if render.get('success') and render.get('image'):
+                    dialog = Forms.SaveFileDialog()
+                    dialog.Title = "Save Rendered Image"
+                    dialog.Filters.Add(Forms.FileFilter("PNG Images", ".png"))
+                    if dialog.ShowDialog(self) == Forms.DialogResult.Ok:
+                        dest = dialog.FileName
+                        if not dest.endswith('.png'):
+                            dest += '.png'
+                        img_bytes = base64.b64decode(render['image'])
+                        with open(dest, 'wb') as f:
+                            f.write(img_bytes)
+                        Forms.MessageBox.Show(self, "Image saved to:\n{}".format(dest), "Saved")
+            except Exception as ex:
+                Forms.MessageBox.Show(self, "Save failed: {}".format(str(ex)), "Error")
 
 
 # -- Entry Point --------------------------------------------------------------
 
 def main():
-    dialog = PromptDialog()
-    dialog.Owner = Rhino.UI.RhinoEtoApp.MainWindow
-    dialog.Show()
+    form = NanoBananaForm()
+    form.Owner = Rhino.UI.RhinoEtoApp.MainWindow
+    form.Show()
 
 
 main()
