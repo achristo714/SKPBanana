@@ -212,11 +212,6 @@ def enhance_prompt_api(api_key, base_prompt):
 
 # -- HTML Templates -----------------------------------------------------------
 
-def path_to_file_url(filepath):
-    """Convert a local file path to a file:// URL safe for HTML src attributes."""
-    return 'file:///' + filepath.replace('\\', '/').replace(' ', '%20')
-
-
 PROMPT_HTML = '''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -529,7 +524,7 @@ RESULTS_HTML_TEMPLATE = '''<!DOCTYPE html>
 
 
 def build_results_html(results, output_folder):
-    """Build results HTML using file:// URLs instead of base64 blobs."""
+    """Build results HTML with relative image paths (HTML lives in same temp dir)."""
     tabs = []
     panels = []
     for i, r in enumerate(results):
@@ -543,7 +538,8 @@ def build_results_html(results, output_folder):
                 active, err_class, i, label))
 
         if r['success']:
-            file_url = path_to_file_url(r['path'])
+            # Use just the filename — HTML file is in the same folder
+            img_filename = os.path.basename(r['path'])
             text_html = ''
             if r.get('text'):
                 safe_text = r['text'].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
@@ -555,7 +551,7 @@ def build_results_html(results, output_folder):
                 '<div class="actions">'
                 '<button class="btn btn-save" onclick="doAction(\'save\',{})">Save As...</button>'
                 '<button class="btn btn-folder" onclick="doAction(\'open_folder\',{})">Open Folder</button>'
-                '</div></div>'.format(active, i, file_url, text_html, i, i))
+                '</div></div>'.format(active, i, img_filename, text_html, i, i))
         else:
             safe_err = r.get('error', 'Unknown error').replace('&', '&amp;').replace('<', '&lt;')
             panels.append(
@@ -570,7 +566,17 @@ def build_results_html(results, output_folder):
         tabs_html='\n'.join(tabs),
         panels_html='\n'.join(panels),
         output_folder=display_folder
-    )
+)
+
+
+def write_results_html_file(results, output_folder):
+    """Write results HTML to a temp file and return the file path."""
+    html = build_results_html(results, output_folder)
+    html_path = os.path.join(output_folder, "results_{}.html".format(
+        time.strftime('%Y%m%d_%H%M%S')))
+    with open(html_path, 'w') as f:
+        f.write(html)
+    return html_path
 
 
 # -- WebView Dialog -----------------------------------------------------------
@@ -771,9 +777,10 @@ class ResultsForm(Forms.Form):
         self.webview.DocumentLoading += self._on_navigate
         self.Content = self.webview
 
-        # Build HTML with file:// URLs — no base64 in JS!
-        html = build_results_html(results, output_folder)
-        self.webview.LoadHtml(html)
+        # Write HTML to temp file and load via file:// URL
+        # This gives the WebView a real file origin so relative image paths work
+        html_path = write_results_html_file(results, output_folder)
+        self.webview.Url = System.Uri(html_path)
 
     def _on_navigate(self, sender, e):
         url = e.Uri.ToString() if e.Uri else ''
