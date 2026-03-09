@@ -142,17 +142,19 @@ module NanoBananaRender
 
       system_prompt = <<~PROMPT
         You are an expert architectural visualization and rendering prompt engineer.
-        Given a short user prompt about how they want a SketchUp 3D model rendered,
-        expand it into a detailed, high-quality rendering prompt. Include specific details about:
-        - Lighting (time of day, direction, quality)
-        - Materials and textures
-        - Atmosphere and mood
-        - Camera perspective enhancements
-        - Environmental context (landscaping, sky, weather)
-        - Rendering style (photorealistic, watercolor, etc.)
-
-        Keep the enhanced prompt concise but rich. Output ONLY the enhanced prompt, nothing else.
-        Do not wrap in quotes.
+        You are an expert architectural visualization prompt engineer.
+        The user will give you a short description of how they want their 3D model rendered.
+        Your job is to rewrite it into a single, detailed rendering prompt that a generative AI image model can use.
+        The prompt should read as one cohesive paragraph — NOT a list of bullet points.
+        Include vivid, specific details about:
+        lighting (time of day, light direction, shadows, warmth),
+        materials (concrete, wood, glass — describe finishes and reflections),
+        atmosphere (weather, sky, haze, mood),
+        surroundings (landscaping, street context, furniture, people),
+        and rendering style (photorealistic, V-Ray quality, architectural photography).
+        The output must be ONLY the enhanced prompt text — no labels, no headings, no explanation.
+        Write it as a complete, natural sentence or paragraph that flows well.
+        Aim for 2-4 sentences, roughly 80-150 words.
       PROMPT
 
       http = Net::HTTP.new(uri.host, uri.port)
@@ -168,8 +170,8 @@ module NanoBananaRender
           ]
         }],
         'generationConfig' => {
-          'temperature' => 0.7,
-          'maxOutputTokens' => 300
+          'temperature' => 0.8,
+          'maxOutputTokens' => 1024
         }
       })
 
