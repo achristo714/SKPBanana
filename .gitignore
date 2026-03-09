@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+nano_banana_render/temp/
+nano_banana_render_rhino/temp/
+nano_banana_render_rhino/config.json
+nano_banana_render/config.json
