@@ -82,11 +82,8 @@ def capture_viewport():
     if view is None:
         raise Exception("No active viewport found")
 
-    size = view.ClientRectangle.Size
-    w = max(size.Width * 2, 800)
-    h = max(size.Height * 2, 600)
-
-    bitmap = view.CaptureToBitmap(System.Drawing.Size(w, h))
+    # Use native viewport size to avoid crash on large monitors
+    bitmap = view.CaptureToBitmap()
     if bitmap is None:
         raise Exception("Failed to capture viewport")
 
@@ -339,7 +336,6 @@ class PromptDialog(Forms.Form):
         self.ClientSize = EtoDrawing.Size(440, 560)
         self.Resizable = True
         self.BackgroundColor = Theme.BG_PRIMARY
-        self.Topmost = True
         self._build_ui()
 
     def _build_ui(self):
