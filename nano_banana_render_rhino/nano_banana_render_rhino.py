@@ -375,7 +375,6 @@ class PromptDialog(Forms.Dialog):
 
         self.prompt_input = Forms.TextArea()
         self.prompt_input.Height = 100
-        self.prompt_input.PlaceholderText = "e.g. Photorealistic exterior render, golden hour lighting, lush landscaping..."
         self.prompt_input.Text = self.config.get('last_prompt', '')
         layout.AddRow(self.prompt_input)
 
