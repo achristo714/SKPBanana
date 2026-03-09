@@ -480,7 +480,59 @@ RESULTS_HTML_TEMPLATE = '''<!DOCTYPE html>
   .tab.active {{ background: var(--accent); color: white; }}
   .tab:hover:not(.active) {{ color: var(--text-primary); background: var(--bg-card); }}
   .tab.error-tab {{ color: #ff4757; }}
+
+  /* View mode toggle */
+  .view-toggle {{ display: flex; gap: 4px; background: var(--bg-input); border-radius: 8px; padding: 3px; margin-bottom: 16px; }}
+  .view-btn {{ flex: 1; padding: 6px 14px; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; }}
+  .view-btn.active {{ background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); }}
+
+  /* Comparison slider */
+  .compare-container {{
+    position: relative; width: 100%; border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--border); cursor: ew-resize; user-select: none;
+    -webkit-user-select: none;
+  }}
+  .compare-container img {{ width: 100%; display: block; }}
+  .compare-after {{
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    overflow: hidden;
+  }}
+  .compare-after img {{
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    object-fit: cover;
+  }}
+  .compare-handle {{
+    position: absolute; top: 0; bottom: 0; width: 3px;
+    background: white; cursor: ew-resize; z-index: 10;
+    box-shadow: 0 0 8px rgba(0,0,0,0.5);
+  }}
+  .compare-handle::after {{
+    content: ''; position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 36px; height: 36px; border-radius: 50%;
+    background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center;
+  }}
+  .compare-handle::before {{
+    content: '\u25C0  \u25B6'; position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%); z-index: 11;
+    font-size: 10px; color: #333; white-space: nowrap;
+  }}
+  .compare-label {{
+    position: absolute; bottom: 10px; padding: 4px 10px; border-radius: 4px;
+    background: rgba(0,0,0,0.6); color: white; font-size: 11px; font-weight: 600;
+    pointer-events: none; z-index: 5;
+  }}
+  .compare-label.left {{ left: 10px; }}
+  .compare-label.right {{ right: 10px; }}
+
+  /* Render-only view */
   .render-img {{ width: 100%; border-radius: 10px; border: 1px solid var(--border); display: block; }}
+  .render-view {{ display: none; }}
+  .render-view.active {{ display: block; }}
+  .compare-view {{ display: none; }}
+  .compare-view.active {{ display: block; }}
+
   .btn {{ display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; flex: 1; }}
   .btn-save {{ background: linear-gradient(135deg, var(--gradient-start), var(--accent-hover)); color: white; }}
   .btn-save:hover {{ transform: translateY(-1px); box-shadow: 0 4px 15px var(--accent-glow); }}
@@ -501,12 +553,18 @@ RESULTS_HTML_TEMPLATE = '''<!DOCTYPE html>
 <body>
 <div class="header"><h1>Render Results</h1></div>
 <div class="tabs" id="tabs">{tabs_html}</div>
+<div class="view-toggle">
+  <button class="view-btn active" id="viewCompare" onclick="setViewMode('compare')">Compare</button>
+  <button class="view-btn" id="viewRender" onclick="setViewMode('render')">Render Only</button>
+</div>
 {panels_html}
 <div class="folder-info">
   <strong>Saved to:</strong> {output_folder}
   <br><button class="btn btn-folder" style="margin-top:8px;flex:none;padding:6px 14px;font-size:11px" onclick="doAction('open_folder','0')">Open Folder</button>
 </div>
 <script>
+  var currentView = 'compare';
+
   function switchTab(index) {{
     var tabs = document.querySelectorAll('.tab');
     var panels = document.querySelectorAll('.result-panel');
@@ -516,17 +574,81 @@ RESULTS_HTML_TEMPLATE = '''<!DOCTYPE html>
     }}
     tabs[index].className += ' active';
     panels[index].className += ' active';
+    updateViewMode();
   }}
+
+  function setViewMode(mode) {{
+    currentView = mode;
+    document.getElementById('viewCompare').className = 'view-btn' + (mode === 'compare' ? ' active' : '');
+    document.getElementById('viewRender').className = 'view-btn' + (mode === 'render' ? ' active' : '');
+    updateViewMode();
+  }}
+
+  function updateViewMode() {{
+    var activePanel = document.querySelector('.result-panel.active');
+    if (!activePanel) return;
+    var cv = activePanel.querySelector('.compare-view');
+    var rv = activePanel.querySelector('.render-view');
+    if (cv) cv.className = 'compare-view' + (currentView === 'compare' ? ' active' : '');
+    if (rv) rv.className = 'render-view' + (currentView === 'render' ? ' active' : '');
+  }}
+
   function doAction(action, idx) {{
     window.location.href = 'nano://' + action + '/' + idx;
   }}
+
+  /* Comparison slider logic */
+  function initSliders() {{
+    var containers = document.querySelectorAll('.compare-container');
+    for (var c = 0; c < containers.length; c++) {{
+      (function(container) {{
+        var afterDiv = container.querySelector('.compare-after');
+        var handle = container.querySelector('.compare-handle');
+        var dragging = false;
+
+        function updatePosition(x) {{
+          var rect = container.getBoundingClientRect();
+          var pct = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
+          afterDiv.style.width = (pct * 100) + '%';
+          handle.style.left = (pct * 100) + '%';
+        }}
+
+        container.addEventListener('mousedown', function(e) {{
+          dragging = true;
+          updatePosition(e.clientX);
+          e.preventDefault();
+        }});
+        document.addEventListener('mousemove', function(e) {{
+          if (dragging) {{ updatePosition(e.clientX); e.preventDefault(); }}
+        }});
+        document.addEventListener('mouseup', function() {{ dragging = false; }});
+
+        container.addEventListener('touchstart', function(e) {{
+          dragging = true;
+          updatePosition(e.touches[0].clientX);
+          e.preventDefault();
+        }});
+        document.addEventListener('touchmove', function(e) {{
+          if (dragging) {{ updatePosition(e.touches[0].clientX); }}
+        }});
+        document.addEventListener('touchend', function() {{ dragging = false; }});
+
+        // Start at 50%
+        afterDiv.style.width = '50%';
+        handle.style.left = '50%';
+      }})(containers[c]);
+    }}
+  }}
+
+  // Init sliders once images load
+  window.addEventListener('load', initSliders);
 </script>
 </body>
 </html>'''
 
 
-def build_results_html(results, output_folder):
-    """Build results HTML with relative image paths (HTML lives in same temp dir)."""
+def build_results_html(results, output_folder, capture_filename):
+    """Build results HTML with comparison slider and relative image paths."""
     tabs = []
     panels = []
     for i, r in enumerate(results):
@@ -540,20 +662,35 @@ def build_results_html(results, output_folder):
                 active, err_class, i, label))
 
         if r['success']:
-            # Use just the filename — HTML file is in the same folder
             img_filename = os.path.basename(r['path'])
             text_html = ''
             if r.get('text'):
                 safe_text = r['text'].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
                 text_html = '<div class="ai-note"><strong>AI Notes:</strong> {}</div>'.format(safe_text)
+
+            # Panel with both compare and render-only views
+            compare_html = (
+                '<div class="compare-view active">'
+                '<div class="compare-container">'
+                '<img src="{before}" alt="Original">'
+                '<div class="compare-after"><img src="{after}" alt="Rendered"></div>'
+                '<div class="compare-handle"></div>'
+                '<span class="compare-label left">Original</span>'
+                '<span class="compare-label right">AI Render</span>'
+                '</div></div>').format(before=capture_filename, after=img_filename)
+
+            render_html = (
+                '<div class="render-view">'
+                '<img class="render-img" src="{}">'
+                '</div>').format(img_filename)
+
             panels.append(
                 '<div class="result-panel{}" id="panel-{}">'
-                '<img class="render-img" src="{}">'
-                '{}'
+                '{}{}{}'
                 '<div class="actions">'
                 '<button class="btn btn-save" onclick="doAction(\'save\',{})">Save As...</button>'
                 '<button class="btn btn-folder" onclick="doAction(\'open_folder\',{})">Open Folder</button>'
-                '</div></div>'.format(active, i, img_filename, text_html, i, i))
+                '</div></div>'.format(active, i, compare_html, render_html, text_html, i, i))
         else:
             safe_err = r.get('error', 'Unknown error').replace('&', '&amp;').replace('<', '&lt;')
             panels.append(
@@ -561,7 +698,6 @@ def build_results_html(results, output_folder):
                 '<div class="error-card"><h3>Rendering Failed</h3><p>{}</p></div>'
                 '</div>'.format(active, i, safe_err))
 
-    # Escape backslashes in folder path for display
     display_folder = output_folder.replace('\\', ' / ')
 
     return RESULTS_HTML_TEMPLATE.format(
@@ -571,9 +707,10 @@ def build_results_html(results, output_folder):
 )
 
 
-def write_results_html_file(results, output_folder):
+def write_results_html_file(results, output_folder, capture_path):
     """Write results HTML to a temp file and return the file path."""
-    html = build_results_html(results, output_folder)
+    capture_filename = os.path.basename(capture_path)
+    html = build_results_html(results, output_folder, capture_filename)
     html_path = os.path.join(output_folder, "results_{}.html".format(
         time.strftime('%Y%m%d_%H%M%S')))
     with open(html_path, 'w') as f:
@@ -754,7 +891,7 @@ class NanoBananaForm(Forms.Form):
                 # Show results in new window — using file paths, not base64!
                 def show_results():
                     try:
-                        results_form = ResultsForm(results, TEMP_DIR)
+                        results_form = ResultsForm(results, TEMP_DIR, capture_path)
                         results_form.Owner = self
                         results_form.Show()
                     except Exception as ex:
@@ -777,7 +914,7 @@ class NanoBananaForm(Forms.Form):
 
 
 class ResultsForm(Forms.Form):
-    def __init__(self, results, output_folder):
+    def __init__(self, results, output_folder, capture_path):
         self.Title = "Render Results - Nano Banana Pro"
         self.ClientSize = EtoDrawing.Size(950, 700)
         self.Resizable = True
@@ -789,7 +926,7 @@ class ResultsForm(Forms.Form):
         self.Content = self.webview
 
         # Write HTML to temp file now, load in _on_shown when WebView is ready
-        self._html_path = write_results_html_file(results, output_folder)
+        self._html_path = write_results_html_file(results, output_folder, capture_path)
         self.Shown += self._on_shown
 
         # Log render summary for debugging
