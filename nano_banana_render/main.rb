@@ -12,7 +12,7 @@ module NanoBananaRender
 
   DEFAULT_CONFIG = {
     'api_key' => '',
-    'model' => 'gemini-3-pro-image-preview',
+    'model' => 'gemini-3.1-pro-image-preview',
     'num_options' => 2,
     'last_prompt' => ''
   }.freeze
@@ -225,7 +225,7 @@ module NanoBananaRender
         end
       end
 
-      @dialog.add_action_callback('render') do |_ctx, prompt, num_options|
+      @dialog.add_action_callback('render') do |_ctx, prompt, num_options, model_name|
         if config['api_key'].empty?
           @dialog.execute_script("showStatus('Set your API key first', 'error')")
           next
@@ -236,6 +236,7 @@ module NanoBananaRender
         num = 4 if num > 4
         config['num_options'] = num
         config['last_prompt'] = prompt
+        config['model'] = model_name.to_s if model_name && !model_name.to_s.empty?
         save_config
 
         @dialog.execute_script("setLoading(true)")
