@@ -350,7 +350,7 @@ class PromptDialog(Forms.Dialog):
         key_row.DefaultSpacing = EtoDrawing.Size(8, 0)
 
         self.api_key_input = Forms.PasswordBox()
-        self.api_key_input.Value = self.config.get('api_key', '')
+        self.api_key_input.Text = self.config.get('api_key', '')
 
         save_key_btn = Forms.Button(Text="Save")
         save_key_btn.Click += self._on_save_key
@@ -430,7 +430,7 @@ class PromptDialog(Forms.Dialog):
             self.status_label.TextColor = EtoDrawing.Color.FromArgb(46, 213, 115)
 
     def _on_save_key(self, sender, e):
-        key = self.api_key_input.Value.strip() if self.api_key_input.Value else ''
+        key = self.api_key_input.Text.strip() if self.api_key_input.Text else ''
         if not key:
             self._set_status("Please enter an API key", True)
             return
@@ -502,8 +502,5 @@ def main():
     dialog = PromptDialog()
     dialog.ShowModal(Rhino.UI.RhinoEtoApp.MainWindow)
 
-
-if __name__ == "__main__":
-    main()
 
 main()
