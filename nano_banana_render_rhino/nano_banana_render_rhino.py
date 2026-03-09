@@ -136,6 +136,8 @@ def call_gemini_api(api_key, model, prompt, image_base64, variation_index=0):
                     time.strftime('%Y%m%d_%H%M%S'), variation_index))
                 with open(output_path, 'wb') as f:
                     f.write(base64.b64decode(image_data))
+                    f.flush()
+                    os.fsync(f.fileno())
                 # Free decoded image from memory
                 del image_data
                 return {'success': True, 'path': output_path, 'text': text_data}
@@ -751,9 +753,18 @@ class NanoBananaForm(Forms.Form):
 
                 # Show results in new window — using file paths, not base64!
                 def show_results():
-                    results_form = ResultsForm(results, TEMP_DIR)
-                    results_form.Owner = self
-                    results_form.Show()
+                    try:
+                        results_form = ResultsForm(results, TEMP_DIR)
+                        results_form.Owner = self
+                        results_form.Show()
+                    except Exception as ex:
+                        # If viewer fails, at least tell user where files are
+                        msg = "Viewer error: {}\n\nYour renders are in:\n{}".format(str(ex), TEMP_DIR)
+                        Forms.MessageBox.Show(self, msg, "Render Complete")
+                        try:
+                            System.Diagnostics.Process.Start("explorer.exe", TEMP_DIR)
+                        except Exception:
+                            pass
 
                 self._run_on_ui(show_results)
 
@@ -777,10 +788,55 @@ class ResultsForm(Forms.Form):
         self.webview.DocumentLoading += self._on_navigate
         self.Content = self.webview
 
-        # Write HTML to temp file and load via file:// URL
-        # This gives the WebView a real file origin so relative image paths work
-        html_path = write_results_html_file(results, output_folder)
-        self.webview.Url = System.Uri(html_path)
+        # Write HTML to temp file now, load in _on_shown when WebView is ready
+        self._html_path = write_results_html_file(results, output_folder)
+        self.Shown += self._on_shown
+
+        # Log render summary for debugging
+        self._write_log(results)
+
+    def _write_log(self, results):
+        """Write a log file so user can see what happened even if viewer crashes."""
+        try:
+            log_path = os.path.join(self.output_folder, "render_log.txt")
+            with open(log_path, 'w') as f:
+                f.write("Nano Banana Render Log - {}\n".format(time.strftime('%Y-%m-%d %H:%M:%S')))
+                f.write("=" * 50 + "\n\n")
+                for i, r in enumerate(results):
+                    f.write("Variation {}:\n".format(i + 1))
+                    if r.get('success'):
+                        f.write("  Status: SUCCESS\n")
+                        f.write("  File: {}\n".format(r.get('path', 'N/A')))
+                        f.write("  Exists: {}\n".format(os.path.exists(r.get('path', ''))))
+                    else:
+                        f.write("  Status: FAILED\n")
+                        f.write("  Error: {}\n".format(r.get('error', 'Unknown')))
+                    f.write("\n")
+                f.write("Results HTML: {}\n".format(self._html_path))
+                f.write("Output folder: {}\n".format(self.output_folder))
+                f.flush()
+                os.fsync(f.fileno())
+        except Exception:
+            pass
+
+    def _on_shown(self, sender, e):
+        """Load the results HTML once the WebView is fully initialized."""
+        try:
+            self.webview.Url = System.Uri(self._html_path)
+        except Exception as ex:
+            # Fallback: show a simple message with file paths
+            self._show_fallback(str(ex))
+
+    def _show_fallback(self, error_msg):
+        """If WebView fails, show file paths in a simple dialog."""
+        lines = ["Results viewer failed to load: {}\n".format(error_msg),
+                 "Your rendered images are saved in:\n{}".format(self.output_folder), ""]
+        for i, r in enumerate(self.results):
+            if r.get('success'):
+                lines.append("Variation {}: {}".format(i + 1, r.get('path', '?')))
+            else:
+                lines.append("Variation {}: FAILED - {}".format(i + 1, r.get('error', '?')))
+        Forms.MessageBox.Show(self, "\n".join(lines), "Render Results")
 
     def _on_navigate(self, sender, e):
         url = e.Uri.ToString() if e.Uri else ''
