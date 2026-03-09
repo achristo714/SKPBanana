@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Nano Banana Pro Render - Rhino Plugin
 # AI-powered rendering for Rhinoceros 3D using Google Gemini API
 # Run via: _RunPythonScript "nano_banana_render_rhino.py"
@@ -329,7 +330,7 @@ class ResultsDialog(Forms.Form):
             Forms.MessageBox.Show(self, "Image saved to:\n{}".format(dest), "Saved")
 
 
-# -- Main Prompt Dialog (Modeless — you can move the camera!) -----------------
+# -- Main Prompt Dialog (Modeless - you can move the camera!) -----------------
 
 class PromptDialog(Forms.Form):
     def __init__(self):
