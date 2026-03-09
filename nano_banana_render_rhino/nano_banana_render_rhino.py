@@ -8,6 +8,7 @@ import json
 import base64
 import time
 import threading
+import shutil
 
 import Rhino
 import Rhino.UI
@@ -29,11 +30,6 @@ DEFAULT_CONFIG = {
     'model': 'gemini-2.5-flash-image',
     'num_options': 2,
     'last_prompt': ''
-}
-
-MODELS = {
-    'gemini-2.5-flash-image': 'Nano Banana (Stable)',
-    'gemini-3.1-flash-image-preview': 'Nano Banana 2 (Latest)',
 }
 
 
@@ -120,6 +116,10 @@ def call_gemini_api(api_key, model, prompt, image_base64, variation_index=0):
         reader.Close()
         response.Close()
 
+        # Free the upload payload from memory immediately
+        del payload
+        del payload_bytes
+
         body = json.loads(response_text)
 
         if 'candidates' in body and len(body['candidates']) > 0:
@@ -136,6 +136,8 @@ def call_gemini_api(api_key, model, prompt, image_base64, variation_index=0):
                     time.strftime('%Y%m%d_%H%M%S'), variation_index))
                 with open(output_path, 'wb') as f:
                     f.write(base64.b64decode(image_data))
+                # Free decoded image from memory
+                del image_data
                 return {'success': True, 'path': output_path, 'text': text_data}
             else:
                 return {'success': False, 'error': text_data or 'No image in response'}
@@ -209,6 +211,11 @@ def enhance_prompt_api(api_key, base_prompt):
 
 
 # -- HTML Templates -----------------------------------------------------------
+
+def path_to_file_url(filepath):
+    """Convert a local file path to a file:// URL safe for HTML src attributes."""
+    return 'file:///' + filepath.replace('\\', '/').replace(' ', '%20')
+
 
 PROMPT_HTML = '''<!DOCTYPE html>
 <html lang="en">
@@ -300,15 +307,34 @@ PROMPT_HTML = '''<!DOCTYPE html>
   }
   .status.success { display: block; background: rgba(46,213,115,0.1); border: 1px solid rgba(46,213,115,0.3); color: var(--success); }
   .status.error { display: block; background: rgba(255,71,87,0.1); border: 1px solid rgba(255,71,87,0.3); color: var(--error); }
+
+  /* Loading overlay with progress bar */
   .loading-overlay {
-    display: none; position: fixed; inset: 0; background: rgba(26,26,46,0.92);
+    display: none; position: fixed; inset: 0; background: rgba(26,26,46,0.95);
     z-index: 100; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
   }
   .loading-overlay.active { display: flex; }
   .spinner { width: 48px; height: 48px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading-text { color: var(--text-secondary); font-size: 14px; font-weight: 500; }
-  .loading-sub { color: var(--text-muted); font-size: 12px; }
+  .loading-sub { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
+
+  .progress-container {
+    width: 280px; margin-top: 8px;
+  }
+  .progress-bar-bg {
+    width: 100%; height: 6px; background: var(--bg-input); border-radius: 3px; overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%; width: 0%; border-radius: 3px;
+    background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end));
+    transition: width 0.4s ease;
+  }
+  .progress-pct {
+    text-align: center; font-size: 22px; font-weight: 700; color: var(--accent);
+    margin-bottom: 4px; font-variant-numeric: tabular-nums;
+  }
+
   .api-key-row { display: flex; gap: 8px; }
   .api-key-row input { flex: 1; }
   .key-toggle { background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--text-muted); cursor: pointer; padding: 0 10px; font-size: 14px; transition: color 0.2s; }
@@ -361,11 +387,19 @@ PROMPT_HTML = '''<!DOCTYPE html>
 <button class="btn btn-primary" id="renderBtn" onclick="startRender()">Capture View &amp; Render</button>
 <div class="hint">Position your camera in Rhino, then click Capture View & Render</div>
 <div class="status" id="status"></div>
+
 <div class="loading-overlay" id="loadingOverlay">
   <div class="spinner"></div>
+  <div class="progress-pct" id="progressPct">0%</div>
+  <div class="progress-container">
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+  </div>
   <div class="loading-text" id="loadingText">Capturing viewport...</div>
-  <div class="loading-sub">This may take 15-60 seconds per variation</div>
+  <div class="loading-sub" id="loadingSub">This may take 15-60 seconds per variation</div>
 </div>
+
 <script>
   var promptEl = document.getElementById('prompt');
   var charCountEl = document.getElementById('charCount');
@@ -397,10 +431,18 @@ PROMPT_HTML = '''<!DOCTYPE html>
     if (cfg.last_prompt) { promptEl.value = cfg.last_prompt; charCountEl.textContent = cfg.last_prompt.length; }
   }
 
-  function setLoading(active, msg) {
+  function setLoading(active, msg, sub) {
     document.getElementById('loadingOverlay').classList.toggle('active', active);
     document.getElementById('renderBtn').disabled = active;
     if (msg) document.getElementById('loadingText').textContent = msg;
+    if (sub) document.getElementById('loadingSub').textContent = sub;
+    if (!active) { setProgress(0); }
+  }
+
+  function setProgress(pct) {
+    pct = Math.min(100, Math.max(0, Math.round(pct)));
+    document.getElementById('progressPct').textContent = pct + '%';
+    document.getElementById('progressFill').style.width = pct + '%';
   }
 
   function setEnhancedPrompt(text) {
@@ -420,92 +462,115 @@ PROMPT_HTML = '''<!DOCTYPE html>
 </html>'''
 
 
-RESULTS_HTML = '''<!DOCTYPE html>
+RESULTS_HTML_TEMPLATE = '''<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <style>
-  :root {
+  :root {{
     --bg-primary: #1a1a2e; --bg-card: #1e2a47; --bg-input: #0f1629;
     --border: #2a3a5c; --text-primary: #e8e8e8; --text-secondary: #a0a8c0;
     --text-muted: #6b7394; --accent: #e94560; --accent-hover: #ff6b81;
     --accent-glow: rgba(233,69,96,0.3); --success: #2ed573;
     --gradient-start: #e94560; --gradient-end: #0abde3;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-primary); color: var(--text-primary); padding: 20px; overflow-y: auto; }
-  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-  .header h1 { font-size: 18px; font-weight: 700; background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-  .tabs { display: flex; gap: 4px; background: var(--bg-input); border-radius: 8px; padding: 3px; margin-bottom: 16px; overflow-x: auto; }
-  .tab { flex: 1; padding: 8px 16px; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; white-space: nowrap; }
-  .tab.active { background: var(--accent); color: white; }
-  .tab:hover:not(.active) { color: var(--text-primary); background: var(--bg-card); }
-  .tab.error-tab { color: #ff4757; }
-  .render-img { width: 100%; border-radius: 10px; border: 1px solid var(--border); }
-  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; flex: 1; }
-  .btn-save { background: linear-gradient(135deg, var(--gradient-start), var(--accent-hover)); color: white; }
-  .btn-save:hover { transform: translateY(-1px); box-shadow: 0 4px 15px var(--accent-glow); }
-  .actions { display: flex; gap: 8px; margin-top: 16px; }
-  .error-card { background: rgba(255,71,87,0.08); border: 1px solid rgba(255,71,87,0.3); border-radius: 10px; padding: 24px; text-align: center; }
-  .error-card h3 { color: #ff4757; font-size: 14px; margin-bottom: 8px; }
-  .error-card p { color: var(--text-muted); font-size: 13px; }
-  .ai-note { margin-top: 12px; padding: 10px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
-  .ai-note strong { color: var(--accent); }
-  .result-panel { display: none; }
-  .result-panel.active { display: block; }
+  }}
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-primary); color: var(--text-primary); padding: 20px; overflow-y: auto; }}
+  .header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }}
+  .header h1 {{ font-size: 18px; font-weight: 700; background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+  .tabs {{ display: flex; gap: 4px; background: var(--bg-input); border-radius: 8px; padding: 3px; margin-bottom: 16px; overflow-x: auto; }}
+  .tab {{ flex: 1; padding: 8px 16px; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; white-space: nowrap; }}
+  .tab.active {{ background: var(--accent); color: white; }}
+  .tab:hover:not(.active) {{ color: var(--text-primary); background: var(--bg-card); }}
+  .tab.error-tab {{ color: #ff4757; }}
+  .render-img {{ width: 100%; border-radius: 10px; border: 1px solid var(--border); display: block; }}
+  .btn {{ display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; flex: 1; }}
+  .btn-save {{ background: linear-gradient(135deg, var(--gradient-start), var(--accent-hover)); color: white; }}
+  .btn-save:hover {{ transform: translateY(-1px); box-shadow: 0 4px 15px var(--accent-glow); }}
+  .btn-folder {{ background: var(--bg-input); border: 1px solid var(--border); color: var(--text-secondary); }}
+  .btn-folder:hover {{ border-color: var(--accent); color: var(--text-primary); }}
+  .actions {{ display: flex; gap: 8px; margin-top: 16px; }}
+  .error-card {{ background: rgba(255,71,87,0.08); border: 1px solid rgba(255,71,87,0.3); border-radius: 10px; padding: 24px; text-align: center; }}
+  .error-card h3 {{ color: #ff4757; font-size: 14px; margin-bottom: 8px; }}
+  .error-card p {{ color: var(--text-muted); font-size: 13px; word-break: break-word; }}
+  .ai-note {{ margin-top: 12px; padding: 10px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }}
+  .ai-note strong {{ color: var(--accent); }}
+  .result-panel {{ display: none; }}
+  .result-panel.active {{ display: block; }}
+  .folder-info {{ margin-top: 16px; padding: 10px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; font-size: 11px; color: var(--text-muted); text-align: center; }}
+  .folder-info strong {{ color: var(--text-secondary); }}
 </style>
 </head>
 <body>
 <div class="header"><h1>Render Results</h1></div>
-<div class="tabs" id="tabs"></div>
-<div id="panels"></div>
+<div class="tabs" id="tabs">{tabs_html}</div>
+{panels_html}
+<div class="folder-info">
+  <strong>Saved to:</strong> {output_folder}
+  <br><button class="btn btn-folder" style="margin-top:8px;flex:none;padding:6px 14px;font-size:11px" onclick="doAction('open_folder','0')">Open Folder</button>
+</div>
 <script>
-  var data = null;
-  function loadResults(payload) { data = payload; buildUI(); }
-
-  function buildUI() {
-    var tabsEl = document.getElementById('tabs');
-    var panelsEl = document.getElementById('panels');
-    tabsEl.innerHTML = ''; panelsEl.innerHTML = '';
-    data.renders.forEach(function(render, i) {
-      var tab = document.createElement('button');
-      tab.className = 'tab' + (i === 0 ? ' active' : '') + (!render.success ? ' error-tab' : '');
-      tab.textContent = render.success ? 'Variation ' + (i+1) : 'Variation ' + (i+1) + ' (Failed)';
-      tab.onclick = function() { switchTab(i); };
-      tabsEl.appendChild(tab);
-
-      var panel = document.createElement('div');
-      panel.className = 'result-panel' + (i === 0 ? ' active' : '');
-      panel.id = 'panel-' + i;
-
-      if (render.success) {
-        panel.innerHTML = '<img class="render-img" src="data:image/png;base64,' + render.image + '">'
-          + (render.text ? '<div class="ai-note"><strong>AI Notes:</strong> ' + escapeHtml(render.text) + '</div>' : '')
-          + '<div class="actions"><button class="btn btn-save" onclick="doAction(\'save\',' + i + ')">Save Image</button></div>';
-      } else {
-        panel.innerHTML = '<div class="error-card"><h3>Rendering Failed</h3><p>' + escapeHtml(render.error) + '</p></div>';
-      }
-      panelsEl.appendChild(panel);
-    });
-  }
-
-  function switchTab(index) {
-    document.querySelectorAll('.tab').forEach(function(t, i) { t.classList.toggle('active', i === index); });
-    document.querySelectorAll('.result-panel').forEach(function(p, i) { p.classList.toggle('active', i === index); });
-  }
-
-  function doAction(action, idx) {
+  function switchTab(index) {{
+    var tabs = document.querySelectorAll('.tab');
+    var panels = document.querySelectorAll('.result-panel');
+    for (var i = 0; i < tabs.length; i++) {{
+      tabs[i].className = tabs[i].className.replace(' active', '');
+      panels[i].className = panels[i].className.replace(' active', '');
+    }}
+    tabs[index].className += ' active';
+    panels[index].className += ' active';
+  }}
+  function doAction(action, idx) {{
     window.location.href = 'nano://' + action + '/' + idx;
-  }
-
-  function escapeHtml(str) {
-    var div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
+  }}
 </script>
 </body>
 </html>'''
+
+
+def build_results_html(results, output_folder):
+    """Build results HTML using file:// URLs instead of base64 blobs."""
+    tabs = []
+    panels = []
+    for i, r in enumerate(results):
+        active = ' active' if i == 0 else ''
+        err_class = '' if r['success'] else ' error-tab'
+        label = 'Variation {}'.format(i + 1)
+        if not r['success']:
+            label += ' (Failed)'
+        tabs.append(
+            '<button class="tab{}{}" onclick="switchTab({})">{}</button>'.format(
+                active, err_class, i, label))
+
+        if r['success']:
+            file_url = path_to_file_url(r['path'])
+            text_html = ''
+            if r.get('text'):
+                safe_text = r['text'].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                text_html = '<div class="ai-note"><strong>AI Notes:</strong> {}</div>'.format(safe_text)
+            panels.append(
+                '<div class="result-panel{}" id="panel-{}">'
+                '<img class="render-img" src="{}">'
+                '{}'
+                '<div class="actions">'
+                '<button class="btn btn-save" onclick="doAction(\'save\',{})">Save As...</button>'
+                '<button class="btn btn-folder" onclick="doAction(\'open_folder\',{})">Open Folder</button>'
+                '</div></div>'.format(active, i, file_url, text_html, i, i))
+        else:
+            safe_err = r.get('error', 'Unknown error').replace('&', '&amp;').replace('<', '&lt;')
+            panels.append(
+                '<div class="result-panel{}" id="panel-{}">'
+                '<div class="error-card"><h3>Rendering Failed</h3><p>{}</p></div>'
+                '</div>'.format(active, i, safe_err))
+
+    # Escape backslashes in folder path for display
+    display_folder = output_folder.replace('\\', ' / ')
+
+    return RESULTS_HTML_TEMPLATE.format(
+        tabs_html='\n'.join(tabs),
+        panels_html='\n'.join(panels),
+        output_folder=display_folder
+    )
 
 
 # -- WebView Dialog -----------------------------------------------------------
@@ -514,7 +579,7 @@ class NanoBananaForm(Forms.Form):
     def __init__(self):
         self.config = load_config()
         self.Title = "Nano Banana Pro Render"
-        self.ClientSize = EtoDrawing.Size(520, 640)
+        self.ClientSize = EtoDrawing.Size(520, 660)
         self.Resizable = True
 
         self.webview = Forms.WebView()
@@ -522,12 +587,10 @@ class NanoBananaForm(Forms.Form):
         self.Content = self.webview
         self.webview.LoadHtml(PROMPT_HTML)
 
-        # Push saved config after a short delay
         self.Shown += self._on_shown
 
     def _on_shown(self, sender, e):
         try:
-            cfg_json = json.dumps(self.config).replace('\\', '\\\\').replace("'", "\\'")
             self.webview.ExecuteScript("setConfig({})".format(json.dumps(self.config)))
         except Exception:
             pass
@@ -621,7 +684,11 @@ class NanoBananaForm(Forms.Form):
         self.config['model'] = model
         save_config(self.config)
 
-        self._exec_js("setLoading(true,'Capturing viewport...')")
+        # Progress: capture=10%, then each variation splits the remaining 90%
+        var_pct = 90.0 / num
+
+        self._exec_js("setLoading(true,'Capturing viewport...','Preparing your scene')")
+        self._exec_js("setProgress(0)")
 
         def do_render():
             try:
@@ -643,36 +710,42 @@ class NanoBananaForm(Forms.Form):
                     return
 
                 capture_path = capture_result[0]
+                self._exec_js("setProgress(10)")
+                self._exec_js("setLoading(true,'Uploading to Gemini API...','Sending captured image')")
+
                 image_b64 = image_to_base64(capture_path)
 
                 results = []
                 for i in range(num):
-                    self._exec_js("setLoading(true,'Rendering variation {} of {}...')".format(i + 1, num))
+                    step_start_pct = 10 + (i * var_pct)
+                    # Show "sending" at start of each variation
+                    self._exec_js("setProgress({})".format(int(step_start_pct)))
+                    self._exec_js(
+                        "setLoading(true,'Rendering variation {} of {}...','Waiting for AI response — this takes 15-60s')".format(
+                            i + 1, num))
+
                     result = call_gemini_api(api_key, model, prompt, image_b64, i)
                     results.append(result)
 
-                # Build results payload
-                render_data = []
-                for r in results:
-                    if r['success']:
-                        render_data.append({
-                            'success': True,
-                            'image': image_to_base64(r['path']),
-                            'text': r.get('text', '')
-                        })
-                    else:
-                        render_data.append({
-                            'success': False,
-                            'error': r.get('error', 'Unknown error')
-                        })
+                    # After each variation completes, update progress
+                    done_pct = 10 + ((i + 1) * var_pct)
+                    self._exec_js("setProgress({})".format(int(done_pct)))
 
-                payload = {'original': image_b64, 'renders': render_data}
+                    if result['success']:
+                        self._exec_js(
+                            "setLoading(true,'Variation {} complete!','{}')".format(
+                                i + 1,
+                                'Starting next variation...' if i < num - 1 else 'All done! Opening results...'))
 
+                # Free the upload image from memory
+                del image_b64
+
+                self._exec_js("setProgress(100)")
                 self._exec_js("setLoading(false)")
 
-                # Show results in new window
+                # Show results in new window — using file paths, not base64!
                 def show_results():
-                    results_form = ResultsForm(payload)
+                    results_form = ResultsForm(results, TEMP_DIR)
                     results_form.Owner = self
                     results_form.Show()
 
@@ -687,25 +760,20 @@ class NanoBananaForm(Forms.Form):
 
 
 class ResultsForm(Forms.Form):
-    def __init__(self, payload):
+    def __init__(self, results, output_folder):
         self.Title = "Render Results - Nano Banana Pro"
         self.ClientSize = EtoDrawing.Size(950, 700)
         self.Resizable = True
-        self.payload = payload
-        self.render_data = payload.get('renders', [])
+        self.results = results
+        self.output_folder = output_folder
 
         self.webview = Forms.WebView()
         self.webview.DocumentLoading += self._on_navigate
         self.Content = self.webview
-        self.webview.LoadHtml(RESULTS_HTML)
-        self.Shown += self._on_shown
 
-    def _on_shown(self, sender, e):
-        try:
-            payload_json = json.dumps(self.payload)
-            self.webview.ExecuteScript("loadResults({})".format(payload_json))
-        except Exception:
-            pass
+        # Build HTML with file:// URLs — no base64 in JS!
+        html = build_results_html(results, output_folder)
+        self.webview.LoadHtml(html)
 
     def _on_navigate(self, sender, e):
         url = e.Uri.ToString() if e.Uri else ''
@@ -717,23 +785,35 @@ class ResultsForm(Forms.Form):
         action = parts[0]
 
         if action == 'save':
+            self._save_image(parts)
+        elif action == 'open_folder':
+            self._open_folder()
+
+    def _save_image(self, parts):
+        try:
+            idx = int(parts[1]) if len(parts) > 1 else 0
+            r = self.results[idx]
+            if r.get('success') and r.get('path') and os.path.exists(r['path']):
+                dialog = Forms.SaveFileDialog()
+                dialog.Title = "Save Rendered Image"
+                dialog.Filters.Add(Forms.FileFilter("PNG Images", ".png"))
+                if dialog.ShowDialog(self) == Forms.DialogResult.Ok:
+                    dest = dialog.FileName
+                    if not dest.endswith('.png'):
+                        dest += '.png'
+                    shutil.copy2(r['path'], dest)
+                    Forms.MessageBox.Show(self, "Image saved to:\n{}".format(dest), "Saved")
+        except Exception as ex:
+            Forms.MessageBox.Show(self, "Save failed: {}".format(str(ex)), "Error")
+
+    def _open_folder(self):
+        try:
+            System.Diagnostics.Process.Start("explorer.exe", self.output_folder)
+        except Exception:
             try:
-                idx = int(parts[1]) if len(parts) > 1 else 0
-                render = self.render_data[idx]
-                if render.get('success') and render.get('image'):
-                    dialog = Forms.SaveFileDialog()
-                    dialog.Title = "Save Rendered Image"
-                    dialog.Filters.Add(Forms.FileFilter("PNG Images", ".png"))
-                    if dialog.ShowDialog(self) == Forms.DialogResult.Ok:
-                        dest = dialog.FileName
-                        if not dest.endswith('.png'):
-                            dest += '.png'
-                        img_bytes = base64.b64decode(render['image'])
-                        with open(dest, 'wb') as f:
-                            f.write(img_bytes)
-                        Forms.MessageBox.Show(self, "Image saved to:\n{}".format(dest), "Saved")
-            except Exception as ex:
-                Forms.MessageBox.Show(self, "Save failed: {}".format(str(ex)), "Error")
+                os.startfile(self.output_folder)
+            except Exception:
+                pass
 
 
 # -- Entry Point --------------------------------------------------------------
