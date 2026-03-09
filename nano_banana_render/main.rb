@@ -12,7 +12,7 @@ module NanoBananaRender
 
   DEFAULT_CONFIG = {
     'api_key' => '',
-    'model' => 'gemini-3.1-pro-image-preview',
+    'model' => 'gemini-2.5-flash-image',
     'num_options' => 2,
     'last_prompt' => ''
   }.freeze

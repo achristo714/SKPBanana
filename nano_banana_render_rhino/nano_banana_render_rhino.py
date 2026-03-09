@@ -3,23 +3,33 @@
 # Run via: _RunPythonScript "nano_banana_render_rhino.py"
 
 import os
-import sys
 import json
 import base64
-import threading
-import tempfile
 import time
 
 import Rhino
 import Rhino.UI
-import rhinoscriptsyntax as rs
-import scriptcontext as sc
 import System
 import System.Drawing as Drawing
 import System.IO as IO
 
 import Eto.Forms as Forms
 import Eto.Drawing as EtoDrawing
+
+# -- Theme Colors -------------------------------------------------------------
+
+class Theme:
+    BG_PRIMARY = EtoDrawing.Color.FromArgb(26, 26, 46)
+    BG_CARD = EtoDrawing.Color.FromArgb(30, 42, 71)
+    BG_INPUT = EtoDrawing.Color.FromArgb(15, 22, 41)
+    BORDER = EtoDrawing.Color.FromArgb(42, 58, 92)
+    TEXT = EtoDrawing.Color.FromArgb(232, 232, 232)
+    TEXT_DIM = EtoDrawing.Color.FromArgb(160, 168, 192)
+    TEXT_MUTED = EtoDrawing.Color.FromArgb(107, 115, 148)
+    ACCENT = EtoDrawing.Color.FromArgb(233, 69, 96)
+    ACCENT_CYAN = EtoDrawing.Color.FromArgb(10, 189, 227)
+    SUCCESS = EtoDrawing.Color.FromArgb(46, 213, 115)
+    ERROR = EtoDrawing.Color.FromArgb(255, 71, 87)
 
 # -- Config ------------------------------------------------------------------
 
@@ -29,15 +39,14 @@ CONFIG_FILE = os.path.join(PLUGIN_DIR, 'config.json')
 
 DEFAULT_CONFIG = {
     'api_key': '',
-    'model': 'gemini-3.1-pro-image-preview',
+    'model': 'gemini-2.5-flash-image',
     'num_options': 2,
     'last_prompt': ''
 }
 
 MODELS = [
-    ('gemini-3.1-pro-image-preview', 'Nano Banana Pro'),
-    ('gemini-3.1-flash-image-preview', 'Nano Banana 2 (Fast)'),
-    ('gemini-2.5-flash-image', 'Nano Banana (Legacy)'),
+    ('gemini-2.5-flash-image', 'Nano Banana (Stable)'),
+    ('gemini-3.1-flash-image-preview', 'Nano Banana 2 (Latest)'),
 ]
 
 
@@ -53,8 +62,9 @@ def load_config():
 
 def save_config(cfg):
     try:
-        if not os.path.exists(os.path.dirname(CONFIG_FILE)):
-            os.makedirs(os.path.dirname(CONFIG_FILE))
+        d = os.path.dirname(CONFIG_FILE)
+        if not os.path.exists(d):
+            os.makedirs(d)
         with open(CONFIG_FILE, 'w') as f:
             json.dump(cfg, f, indent=2)
     except Exception:
@@ -71,17 +81,16 @@ def capture_viewport():
     if view is None:
         raise Exception("No active viewport found")
 
-    vp = view.ActiveViewport
     size = view.ClientRectangle.Size
-    width = size.Width * 2
-    height = size.Height * 2
+    w = max(size.Width * 2, 800)
+    h = max(size.Height * 2, 600)
 
-    bitmap = view.CaptureToBitmap(System.Drawing.Size(width, height))
+    bitmap = view.CaptureToBitmap(System.Drawing.Size(w, h))
     if bitmap is None:
         raise Exception("Failed to capture viewport")
 
-    timestamp = time.strftime('%Y%m%d_%H%M%S')
-    filepath = os.path.join(TEMP_DIR, "capture_{}.png".format(timestamp))
+    ts = time.strftime('%Y%m%d_%H%M%S')
+    filepath = os.path.join(TEMP_DIR, "capture_{}.png".format(ts))
     bitmap.Save(filepath, Drawing.Imaging.ImageFormat.Png)
     bitmap.Dispose()
     return filepath
@@ -95,18 +104,12 @@ def image_to_base64(filepath):
 # -- Gemini API ---------------------------------------------------------------
 
 def call_gemini_api(api_key, model, prompt, image_base64, variation_index=0):
-    """Call Gemini API for a single image generation request."""
     try:
         url = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}".format(model, api_key)
 
         parts = [
             {'text': prompt},
-            {
-                'inline_data': {
-                    'mime_type': 'image/png',
-                    'data': image_base64
-                }
-            }
+            {'inline_data': {'mime_type': 'image/png', 'data': image_base64}}
         ]
 
         payload = json.dumps({
@@ -117,7 +120,6 @@ def call_gemini_api(api_key, model, prompt, image_base64, variation_index=0):
             }
         })
 
-        # Use .NET WebRequest for HTTPS
         request = System.Net.WebRequest.Create(url)
         request.Method = "POST"
         request.ContentType = "application/json"
@@ -125,7 +127,6 @@ def call_gemini_api(api_key, model, prompt, image_base64, variation_index=0):
 
         payload_bytes = System.Text.Encoding.UTF8.GetBytes(payload)
         request.ContentLength = payload_bytes.Length
-
         stream = request.GetRequestStream()
         stream.Write(payload_bytes, 0, payload_bytes.Length)
         stream.Close()
@@ -142,13 +143,11 @@ def call_gemini_api(api_key, model, prompt, image_base64, variation_index=0):
             candidate = body['candidates'][0]
             image_data = None
             text_data = None
-
             for part in candidate.get('content', {}).get('parts', []):
                 if 'inline_data' in part:
                     image_data = part['inline_data']['data']
                 elif 'text' in part:
                     text_data = part['text']
-
             if image_data:
                 output_path = os.path.join(TEMP_DIR, "render_{}_{}.png".format(
                     time.strftime('%Y%m%d_%H%M%S'), variation_index))
@@ -177,7 +176,6 @@ def call_gemini_api(api_key, model, prompt, image_base64, variation_index=0):
 
 
 def enhance_prompt(api_key, base_prompt):
-    """Use Gemini Flash to enhance a rendering prompt."""
     try:
         url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}".format(api_key)
 
@@ -191,23 +189,16 @@ def enhance_prompt(api_key, base_prompt):
         )
 
         payload = json.dumps({
-            'contents': [{
-                'parts': [{'text': "{}\n\nUser prompt: {}".format(system_prompt, base_prompt)}]
-            }],
-            'generationConfig': {
-                'temperature': 0.7,
-                'maxOutputTokens': 300
-            }
+            'contents': [{'parts': [{'text': "{}\n\nUser prompt: {}".format(system_prompt, base_prompt)}]}],
+            'generationConfig': {'temperature': 0.7, 'maxOutputTokens': 300}
         })
 
         request = System.Net.WebRequest.Create(url)
         request.Method = "POST"
         request.ContentType = "application/json"
         request.Timeout = 30000
-
         payload_bytes = System.Text.Encoding.UTF8.GetBytes(payload)
         request.ContentLength = payload_bytes.Length
-
         stream = request.GetRequestStream()
         stream.Write(payload_bytes, 0, payload_bytes.Length)
         stream.Close()
@@ -227,42 +218,68 @@ def enhance_prompt(api_key, base_prompt):
         return base_prompt
 
 
+# -- Dark Themed Panel Helper -------------------------------------------------
+
+def make_dark_panel(content, padding=12):
+    panel = Forms.Panel()
+    panel.BackgroundColor = Theme.BG_CARD
+    panel.Padding = EtoDrawing.Padding(padding)
+    panel.Content = content
+    return panel
+
+
+def styled_label(text, color=None, bold=False, size=12):
+    label = Forms.Label()
+    label.Text = text
+    label.TextColor = color or Theme.TEXT
+    if bold:
+        label.Font = EtoDrawing.Font(EtoDrawing.FontFamilies.SansFamilyName, size, EtoDrawing.FontStyle.Bold)
+    else:
+        label.Font = EtoDrawing.Font(EtoDrawing.FontFamilies.SansFamilyName, size)
+    return label
+
+
+def styled_button(text, accent=False):
+    btn = Forms.Button()
+    btn.Text = text
+    btn.Height = 32
+    return btn
+
+
 # -- Results Dialog -----------------------------------------------------------
 
-class ResultsDialog(Forms.Dialog):
+class ResultsDialog(Forms.Form):
     def __init__(self, original_b64, results):
         self.Title = "Render Results - Nano Banana Pro"
-        self.ClientSize = EtoDrawing.Size(900, 650)
+        self.ClientSize = EtoDrawing.Size(920, 680)
         self.Resizable = True
+        self.BackgroundColor = Theme.BG_PRIMARY
         self.original_b64 = original_b64
         self.results = results
         self._build_ui()
 
     def _build_ui(self):
         layout = Forms.DynamicLayout()
-        layout.DefaultSpacing = EtoDrawing.Size(8, 8)
-        layout.Padding = EtoDrawing.Padding(16)
+        layout.DefaultSpacing = EtoDrawing.Size(10, 10)
+        layout.Padding = EtoDrawing.Padding(20)
 
-        # Title
-        title = Forms.Label()
-        title.Text = "Render Results"
-        title.Font = EtoDrawing.Font(EtoDrawing.FontFamilies.SansFamilyName, 16, EtoDrawing.FontStyle.Bold)
-        layout.AddRow(title)
+        # Header
+        layout.AddRow(styled_label("Render Results", Theme.ACCENT, bold=True, size=18))
+        layout.AddRow(styled_label("Compare your AI-rendered variations below", Theme.TEXT_MUTED, size=11))
         layout.AddRow(None)
 
-        # Tabs for variations
+        # Tabs
         self.tab_control = Forms.TabControl()
 
         for i, result in enumerate(self.results):
             page = Forms.TabPage()
-            page.Text = "Variation {}".format(i + 1) if result['success'] else "Variation {} (Failed)".format(i + 1)
+            page.Text = "  Variation {}  ".format(i + 1) if result['success'] else "  Variation {} (Failed)  ".format(i + 1)
 
             page_layout = Forms.DynamicLayout()
             page_layout.DefaultSpacing = EtoDrawing.Size(8, 8)
-            page_layout.Padding = EtoDrawing.Padding(12)
+            page_layout.Padding = EtoDrawing.Padding(16)
 
             if result['success']:
-                # Show rendered image
                 render_b64 = image_to_base64(result['path'])
                 img_bytes = System.Convert.FromBase64String(render_b64)
                 stream = IO.MemoryStream(img_bytes)
@@ -274,23 +291,23 @@ class ResultsDialog(Forms.Dialog):
                 page_layout.AddRow(image_view)
 
                 if result.get('text'):
-                    note = Forms.Label()
-                    note.Text = "AI Notes: {}".format(result['text'])
-                    note.Wrap = Forms.WrapMode.Word
-                    page_layout.AddRow(note)
+                    note_label = styled_label("AI Notes: {}".format(result['text']), Theme.TEXT_DIM, size=11)
+                    note_label.Wrap = Forms.WrapMode.Word
+                    page_layout.AddRow(make_dark_panel(note_label, 10))
 
-                # Save button
-                save_btn = Forms.Button()
-                save_btn.Text = "Save Image"
+                save_btn = styled_button("Save Image")
                 save_btn.Tag = result['path']
                 save_btn.Click += self._on_save
                 page_layout.AddRow(save_btn)
             else:
-                error_label = Forms.Label()
-                error_label.Text = "Rendering Failed: {}".format(result.get('error', 'Unknown error'))
-                error_label.TextColor = EtoDrawing.Color.FromArgb(255, 71, 87)
-                error_label.Wrap = Forms.WrapMode.Word
-                page_layout.AddRow(error_label)
+                err_layout = Forms.DynamicLayout()
+                err_layout.DefaultSpacing = EtoDrawing.Size(4, 8)
+                err_layout.Padding = EtoDrawing.Padding(20)
+                err_layout.AddRow(styled_label("Rendering Failed", Theme.ERROR, bold=True, size=14))
+                err_msg = styled_label(result.get('error', 'Unknown error'), Theme.TEXT_DIM, size=11)
+                err_msg.Wrap = Forms.WrapMode.Word
+                err_layout.AddRow(err_msg)
+                page_layout.AddRow(make_dark_panel(err_layout))
 
             page_layout.AddRow(None)
             page.Content = page_layout
@@ -304,7 +321,6 @@ class ResultsDialog(Forms.Dialog):
         dialog = Forms.SaveFileDialog()
         dialog.Title = "Save Rendered Image"
         dialog.Filters.Add(Forms.FileFilter("PNG Images", ".png"))
-
         if dialog.ShowDialog(self) == Forms.DialogResult.Ok:
             dest = dialog.FileName
             if not dest.endswith('.png'):
@@ -313,87 +329,86 @@ class ResultsDialog(Forms.Dialog):
             Forms.MessageBox.Show(self, "Image saved to:\n{}".format(dest), "Saved")
 
 
-# -- Main Prompt Dialog -------------------------------------------------------
+# -- Main Prompt Dialog (Modeless — you can move the camera!) -----------------
 
-class PromptDialog(Forms.Dialog):
+class PromptDialog(Forms.Form):
     def __init__(self):
         self.config = load_config()
         self.Title = "Nano Banana Pro Render"
-        self.ClientSize = EtoDrawing.Size(480, 520)
+        self.ClientSize = EtoDrawing.Size(440, 560)
         self.Resizable = True
+        self.BackgroundColor = Theme.BG_PRIMARY
+        self.Topmost = True
         self._build_ui()
 
     def _build_ui(self):
         layout = Forms.DynamicLayout()
-        layout.DefaultSpacing = EtoDrawing.Size(8, 8)
+        layout.DefaultSpacing = EtoDrawing.Size(6, 6)
         layout.Padding = EtoDrawing.Padding(20)
 
-        # Title
-        title = Forms.Label()
-        title.Text = "Nano Banana Pro Render"
-        title.Font = EtoDrawing.Font(EtoDrawing.FontFamilies.SansFamilyName, 16, EtoDrawing.FontStyle.Bold)
-        layout.AddRow(title)
-
-        subtitle = Forms.Label()
-        subtitle.Text = "AI-powered rendering for Rhino"
-        layout.AddRow(subtitle)
+        # ---- Header ----
+        layout.AddRow(styled_label("Nano Banana Pro Render", Theme.ACCENT, bold=True, size=18))
+        layout.AddRow(styled_label("AI-powered rendering for Rhino", Theme.TEXT_MUTED, size=11))
         layout.AddRow(None)
 
-        # API Key section
-        section_label = Forms.Label()
-        section_label.Text = "API CONFIGURATION"
-        section_label.Font = EtoDrawing.Font(EtoDrawing.FontFamilies.SansFamilyName, 10, EtoDrawing.FontStyle.Bold)
-        layout.AddRow(section_label)
+        # ---- API Key Card ----
+        key_layout = Forms.DynamicLayout()
+        key_layout.DefaultSpacing = EtoDrawing.Size(6, 6)
 
-        layout.AddRow(Forms.Label(Text="Google AI API Key"))
+        key_layout.AddRow(styled_label("API CONFIGURATION", Theme.TEXT_MUTED, bold=True, size=9))
+        key_layout.AddRow(styled_label("Google AI API Key", Theme.TEXT_DIM, size=11))
+
         key_row = Forms.DynamicLayout()
-        key_row.DefaultSpacing = EtoDrawing.Size(8, 0)
-
+        key_row.DefaultSpacing = EtoDrawing.Size(6, 0)
         self.api_key_input = Forms.PasswordBox()
         self.api_key_input.Text = self.config.get('api_key', '')
 
-        save_key_btn = Forms.Button(Text="Save")
+        save_key_btn = styled_button("Save")
+        save_key_btn.Width = 60
         save_key_btn.Click += self._on_save_key
 
         key_row.AddRow(self.api_key_input, save_key_btn)
-        layout.AddRow(key_row)
+        key_layout.AddRow(key_row)
+
+        layout.AddRow(make_dark_panel(key_layout))
         layout.AddRow(None)
 
-        # Prompt section
-        prompt_section = Forms.Label()
-        prompt_section.Text = "RENDER PROMPT"
-        prompt_section.Font = EtoDrawing.Font(EtoDrawing.FontFamilies.SansFamilyName, 10, EtoDrawing.FontStyle.Bold)
-        layout.AddRow(prompt_section)
+        # ---- Prompt Card ----
+        prompt_layout = Forms.DynamicLayout()
+        prompt_layout.DefaultSpacing = EtoDrawing.Size(6, 6)
+
+        prompt_layout.AddRow(styled_label("RENDER PROMPT", Theme.TEXT_MUTED, bold=True, size=9))
 
         prompt_header = Forms.DynamicLayout()
-        prompt_header.DefaultSpacing = EtoDrawing.Size(8, 0)
-        prompt_label = Forms.Label(Text="Describe your desired render")
-        enhance_btn = Forms.Button(Text="Enhance Prompt")
+        prompt_header.DefaultSpacing = EtoDrawing.Size(6, 0)
+        enhance_btn = styled_button("Enhance Prompt")
         enhance_btn.Click += self._on_enhance
-        prompt_header.AddRow(prompt_label, None, enhance_btn)
-        layout.AddRow(prompt_header)
+        prompt_header.AddRow(styled_label("Describe your desired render", Theme.TEXT_DIM, size=11), None, enhance_btn)
+        prompt_layout.AddRow(prompt_header)
 
         self.prompt_input = Forms.TextArea()
-        self.prompt_input.Height = 100
+        self.prompt_input.Height = 90
         self.prompt_input.Text = self.config.get('last_prompt', '')
-        layout.AddRow(self.prompt_input)
+        self.prompt_input.BackgroundColor = Theme.BG_INPUT
+        self.prompt_input.TextColor = Theme.TEXT
+        prompt_layout.AddRow(self.prompt_input)
 
-        # Options row
+        # Options
         options_row = Forms.DynamicLayout()
-        options_row.DefaultSpacing = EtoDrawing.Size(16, 0)
+        options_row.DefaultSpacing = EtoDrawing.Size(12, 0)
 
-        # Variations
         var_layout = Forms.DynamicLayout()
-        var_layout.AddRow(Forms.Label(Text="Variations"))
+        var_layout.DefaultSpacing = EtoDrawing.Size(0, 4)
+        var_layout.AddRow(styled_label("Variations", Theme.TEXT_DIM, size=11))
         self.num_options = Forms.DropDown()
         for n in range(1, 5):
             self.num_options.Items.Add("{} option{}".format(n, 's' if n > 1 else ''))
-        self.num_options.SelectedIndex = self.config.get('num_options', 2) - 1
+        self.num_options.SelectedIndex = min(self.config.get('num_options', 2) - 1, 3)
         var_layout.AddRow(self.num_options)
 
-        # Model
         model_layout = Forms.DynamicLayout()
-        model_layout.AddRow(Forms.Label(Text="Model"))
+        model_layout.DefaultSpacing = EtoDrawing.Size(0, 4)
+        model_layout.AddRow(styled_label("Model", Theme.TEXT_DIM, size=11))
         self.model_dropdown = Forms.DropDown()
         current_model = self.config.get('model', MODELS[0][0])
         selected_idx = 0
@@ -405,17 +420,27 @@ class PromptDialog(Forms.Dialog):
         model_layout.AddRow(self.model_dropdown)
 
         options_row.AddRow(var_layout, model_layout)
-        layout.AddRow(options_row)
+        prompt_layout.AddRow(options_row)
+
+        layout.AddRow(make_dark_panel(prompt_layout))
         layout.AddRow(None)
 
-        # Render button
-        render_btn = Forms.Button(Text="Capture View & Render")
+        # ---- Render Button ----
+        render_btn = Forms.Button()
+        render_btn.Text = "Capture View & Render"
+        render_btn.Height = 40
         render_btn.Click += self._on_render
         layout.AddRow(render_btn)
 
-        # Status label
+        # ---- Hint ----
+        hint = styled_label("Move your camera freely, then click Capture View & Render", Theme.TEXT_MUTED, size=10)
+        hint.TextAlignment = Forms.TextAlignment.Center
+        layout.AddRow(hint)
+
+        # ---- Status ----
         self.status_label = Forms.Label()
         self.status_label.Text = ""
+        self.status_label.TextColor = Theme.SUCCESS
         layout.AddRow(self.status_label)
 
         layout.AddRow(None)
@@ -423,10 +448,7 @@ class PromptDialog(Forms.Dialog):
 
     def _set_status(self, msg, is_error=False):
         self.status_label.Text = msg
-        if is_error:
-            self.status_label.TextColor = EtoDrawing.Color.FromArgb(255, 71, 87)
-        else:
-            self.status_label.TextColor = EtoDrawing.Color.FromArgb(46, 213, 115)
+        self.status_label.TextColor = Theme.ERROR if is_error else Theme.SUCCESS
 
     def _on_save_key(self, sender, e):
         key = self.api_key_input.Text.strip() if self.api_key_input.Text else ''
@@ -446,7 +468,6 @@ class PromptDialog(Forms.Dialog):
         if not api_key:
             self._set_status("Set your API key first", True)
             return
-
         self._set_status("Enhancing prompt...")
         enhanced = enhance_prompt(api_key, prompt)
         self.prompt_input.Text = enhanced
@@ -480,8 +501,6 @@ class PromptDialog(Forms.Dialog):
             self._set_status("Capture failed: {}".format(str(ex)), True)
             return
 
-        self._set_status("Rendering... this may take 15-60 seconds per variation")
-
         results = []
         for i in range(num):
             self._set_status("Rendering variation {} of {}...".format(i + 1, num))
@@ -490,16 +509,17 @@ class PromptDialog(Forms.Dialog):
 
         self._set_status("Done!")
 
-        # Show results
         results_dlg = ResultsDialog(image_b64, results)
-        results_dlg.ShowModal(self)
+        results_dlg.Owner = self
+        results_dlg.Show()
 
 
 # -- Entry Point --------------------------------------------------------------
 
 def main():
     dialog = PromptDialog()
-    dialog.ShowModal(Rhino.UI.RhinoEtoApp.MainWindow)
+    dialog.Owner = Rhino.UI.RhinoEtoApp.MainWindow
+    dialog.Show()
 
 
 main()
