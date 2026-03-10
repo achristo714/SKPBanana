@@ -1001,7 +1001,8 @@ class NanoBananaForm(Forms.Form):
                 # Show results in new window — using file paths, not base64!
                 def show_results():
                     try:
-                        results_form = ResultsForm(results, TEMP_DIR, capture_path)
+                        results_form = ResultsForm()
+                        results_form.setup(results, TEMP_DIR, capture_path)
                         results_form.Owner = self
                         results_form.Show()
                     except Exception as ex:
@@ -1024,8 +1025,10 @@ class NanoBananaForm(Forms.Form):
 
 
 class ResultsForm(Forms.Form):
-    def __init__(self, results, output_folder, capture_path):
+    def __init__(self):
         Forms.Form.__init__(self)
+
+    def setup(self, results, output_folder, capture_path):
         self.Title = "Render Results - Nano Banana Pro"
         self.ClientSize = EtoDrawing.Size(950, 700)
         self.Resizable = True
