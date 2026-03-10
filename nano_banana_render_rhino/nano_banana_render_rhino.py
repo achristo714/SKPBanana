@@ -1025,6 +1025,7 @@ class NanoBananaForm(Forms.Form):
 
 class ResultsForm(Forms.Form):
     def __init__(self, results, output_folder, capture_path):
+        Forms.Form.__init__(self)
         self.Title = "Render Results - Nano Banana Pro"
         self.ClientSize = EtoDrawing.Size(950, 700)
         self.Resizable = True
