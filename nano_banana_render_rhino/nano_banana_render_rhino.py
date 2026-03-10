@@ -220,21 +220,21 @@ PROMPT_HTML = '''<!DOCTYPE html>
 <meta charset="UTF-8">
 <style>
   :root {
-    --bg-primary: #1a1a2e;
-    --bg-card: #1e2a47;
-    --bg-input: #0f1629;
-    --border: #2a3a5c;
+    --bg-primary: #0a0a0a;
+    --bg-card: #141414;
+    --bg-input: #0e0e0e;
+    --border: #222;
     --border-focus: #e94560;
-    --text-primary: #e8e8e8;
-    --text-secondary: #a0a8c0;
-    --text-muted: #6b7394;
+    --text-primary: #f0f0f0;
+    --text-secondary: #999;
+    --text-muted: #555;
     --accent: #e94560;
     --accent-hover: #ff6b81;
-    --accent-glow: rgba(233, 69, 96, 0.3);
+    --accent-glow: rgba(233, 69, 96, 0.35);
     --success: #2ed573;
     --error: #ff4757;
     --gradient-start: #e94560;
-    --gradient-end: #0abde3;
+    --gradient-end: #ff6b81;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -244,22 +244,30 @@ PROMPT_HTML = '''<!DOCTYPE html>
     padding: 20px;
     overflow-y: auto;
   }
-  .header { text-align: center; margin-bottom: 24px; }
+
+  /* Header */
+  .header { text-align: center; margin-bottom: 24px; position: relative; }
   .header h1 {
-    font-size: 20px; font-weight: 700;
-    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+    font-size: 22px; font-weight: 800; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #fff 0%, #e94560 50%, #ff6b81 100%);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     margin-bottom: 4px;
   }
-  .header p { font-size: 12px; color: var(--text-muted); }
+  .header p { font-size: 11px; color: var(--text-muted); letter-spacing: 2px; text-transform: uppercase; }
+
+  /* Sections */
   .section {
     background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 16px; margin-bottom: 16px;
+    border-radius: 12px; padding: 16px; margin-bottom: 14px;
+    transition: border-color 0.3s;
   }
+  .section:hover { border-color: #333; }
   .section-title {
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 1.2px; color: var(--text-muted); margin-bottom: 10px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.5px; color: var(--text-muted); margin-bottom: 10px;
   }
+
+  /* Inputs */
   label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 500; }
   input[type="text"], input[type="password"], textarea, select {
     width: 100%; background: var(--bg-input); border: 1px solid var(--border);
@@ -273,62 +281,72 @@ PROMPT_HTML = '''<!DOCTYPE html>
   textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
   select {
     cursor: pointer; appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a0a8c0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px;
   }
+
+  /* Buttons */
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     padding: 10px 18px; border: none; border-radius: 8px; font-size: 13px;
-    font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit;
+    font-weight: 600; cursor: pointer; transition: all 0.25s; font-family: inherit;
   }
   .btn-primary {
-    background: linear-gradient(135deg, var(--gradient-start), var(--accent-hover));
-    color: white; width: 100%;
+    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+    color: white; width: 100%; position: relative; overflow: hidden;
+    font-size: 14px; font-weight: 700; padding: 14px 18px; border-radius: 10px;
+    letter-spacing: 0.3px;
   }
-  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px var(--accent-glow); }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px var(--accent-glow); }
   .btn-primary:active { transform: translateY(0); }
   .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
   .btn-secondary { background: var(--bg-input); border: 1px solid var(--border); color: var(--text-secondary); }
   .btn-secondary:hover { border-color: var(--accent); color: var(--text-primary); }
   .btn-enhance {
-    background: linear-gradient(135deg, #0abde3, #48dbfb); color: #1a1a2e;
-    font-size: 11px; padding: 6px 12px; border-radius: 6px;
+    background: transparent; border: 1px solid #333; color: var(--text-secondary);
+    font-size: 11px; padding: 5px 10px; border-radius: 6px;
   }
-  .btn-enhance:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(10, 189, 227, 0.3); }
+  .btn-enhance:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-auto {
+    background: transparent; border: 1px solid #333; color: var(--text-secondary);
+    font-size: 11px; padding: 5px 10px; border-radius: 6px;
+  }
+  .btn-auto:hover { border-color: #2ed573; color: #2ed573; }
+
   .prompt-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .prompt-actions { display: flex; gap: 6px; }
   .options-row { display: flex; gap: 12px; margin-top: 12px; }
   .options-row > div { flex: 1; }
   .status {
     text-align: center; font-size: 12px; padding: 8px; border-radius: 6px;
     margin-top: 12px; display: none;
   }
-  .status.success { display: block; background: rgba(46,213,115,0.1); border: 1px solid rgba(46,213,115,0.3); color: var(--success); }
-  .status.error { display: block; background: rgba(255,71,87,0.1); border: 1px solid rgba(255,71,87,0.3); color: var(--error); }
+  .status.success { display: block; background: rgba(46,213,115,0.08); border: 1px solid rgba(46,213,115,0.2); color: var(--success); }
+  .status.error { display: block; background: rgba(255,71,87,0.08); border: 1px solid rgba(255,71,87,0.2); color: var(--error); }
 
-  /* Loading overlay with progress bar */
+  /* Loading overlay */
   .loading-overlay {
-    display: none; position: fixed; inset: 0; background: rgba(26,26,46,0.95);
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.97);
     z-index: 100; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
   }
   .loading-overlay.active { display: flex; }
-  .spinner { width: 48px; height: 48px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  .spinner {
+    width: 48px; height: 48px; border: 2px solid #222; border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading-text { color: var(--text-secondary); font-size: 14px; font-weight: 500; }
   .loading-sub { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
 
-  .progress-container {
-    width: 280px; margin-top: 8px;
-  }
-  .progress-bar-bg {
-    width: 100%; height: 6px; background: var(--bg-input); border-radius: 3px; overflow: hidden;
-  }
+  .progress-container { width: 280px; margin-top: 8px; }
+  .progress-bar-bg { width: 100%; height: 4px; background: #1a1a1a; border-radius: 2px; overflow: hidden; }
   .progress-bar-fill {
-    height: 100%; width: 0%; border-radius: 3px;
+    height: 100%; width: 0%; border-radius: 2px;
     background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end));
     transition: width 0.4s ease;
   }
   .progress-pct {
-    text-align: center; font-size: 22px; font-weight: 700; color: var(--accent);
+    text-align: center; font-size: 28px; font-weight: 800; color: var(--accent);
     margin-bottom: 4px; font-variant-numeric: tabular-nums;
   }
 
@@ -338,51 +356,83 @@ PROMPT_HTML = '''<!DOCTYPE html>
   .key-toggle:hover { color: var(--text-primary); }
   .char-count { text-align: right; font-size: 11px; color: var(--text-muted); margin-top: 4px; }
   .hint { text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 10px; font-style: italic; }
+
+  /* Generate button effects */
+  @keyframes pulse-ring {
+    0% { transform: scale(1); opacity: 0.6; }
+    100% { transform: scale(1.8); opacity: 0; }
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% center; }
+    100% { background-position: 200% center; }
+  }
+  .btn-primary.launching {
+    animation: none;
+    background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end), #fff, var(--gradient-end), var(--gradient-start));
+    background-size: 200% 100%;
+    animation: shimmer 0.6s ease-out;
+  }
+
+  /* Particle burst */
+  .particle-container {
+    position: fixed; inset: 0; pointer-events: none; z-index: 200; overflow: hidden;
+  }
+  .particle {
+    position: absolute; width: 4px; height: 4px; border-radius: 50%;
+    animation: particle-fly 0.8s ease-out forwards;
+  }
+  @keyframes particle-fly {
+    0% { transform: translate(0, 0) scale(1); opacity: 1; }
+    100% { opacity: 0; }
+  }
 </style>
 </head>
 <body>
 <div class="header">
-  <h1>Nano Banana Pro Render</h1>
-  <p>AI-powered rendering for Rhino</p>
+  <h1>Nano Banana Pro</h1>
+  <p>AI Render Engine</p>
 </div>
 <div class="section">
-  <div class="section-title">API Configuration</div>
-  <label>Google AI API Key</label>
+  <div class="section-title">API Key</div>
   <div class="api-key-row">
-    <input type="password" id="apiKey" placeholder="Enter your Gemini API key...">
+    <input type="password" id="apiKey" placeholder="Gemini API key...">
     <button class="key-toggle" onclick="toggleKey()" title="Show/Hide">&#x1f441;</button>
     <button class="btn btn-secondary" onclick="doAction('save_key',{key:document.getElementById('apiKey').value.trim()})">Save</button>
   </div>
 </div>
 <div class="section">
-  <div class="section-title">Render Prompt</div>
+  <div class="section-title">Prompt</div>
   <div class="prompt-header">
-    <label style="margin:0">Describe your desired render</label>
-    <button class="btn btn-enhance" onclick="doAction('enhance',{prompt:document.getElementById('prompt').value.trim()})">Enhance Prompt</button>
+    <label style="margin:0">Describe your render</label>
+    <div class="prompt-actions">
+      <button class="btn btn-auto" onclick="autoPrompt()">Auto</button>
+      <button class="btn btn-enhance" onclick="doAction('enhance',{prompt:document.getElementById('prompt').value.trim()})">Enhance</button>
+    </div>
   </div>
-  <textarea id="prompt" placeholder="e.g. Photorealistic exterior render, golden hour lighting, lush landscaping..."></textarea>
+  <textarea id="prompt" placeholder="e.g. Photorealistic exterior, golden hour, lush landscaping..."></textarea>
   <div class="char-count"><span id="charCount">0</span> chars</div>
   <div class="options-row">
     <div>
       <label>Variations</label>
       <select id="numOptions">
-        <option value="1">1 option</option>
-        <option value="2" selected>2 options</option>
-        <option value="3">3 options</option>
-        <option value="4">4 options</option>
+        <option value="1">1</option>
+        <option value="2" selected>2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
       </select>
     </div>
     <div>
       <label>Model</label>
       <select id="model">
-        <option value="gemini-2.5-flash-image">Nano Banana (Stable)</option>
-        <option value="gemini-3.1-flash-image-preview">Nano Banana 2 (Latest)</option>
+        <option value="gemini-2.0-flash-image">Nano Banana Legacy</option>
+        <option value="gemini-2.5-flash-image" selected>Nano Banana Pro</option>
+        <option value="gemini-3.1-flash-image-preview">Nano Banana 2</option>
       </select>
     </div>
   </div>
 </div>
-<button class="btn btn-primary" id="renderBtn" onclick="startRender()">Capture View &amp; Render</button>
-<div class="hint">Position your camera in Rhino, then click Capture View & Render</div>
+<button class="btn btn-primary" id="renderBtn" onclick="startRender()">Generate Render</button>
+<div class="hint">Position your camera in Rhino, then hit Generate</div>
 <div class="status" id="status"></div>
 
 <div class="loading-overlay" id="loadingOverlay">
@@ -396,6 +446,8 @@ PROMPT_HTML = '''<!DOCTYPE html>
   <div class="loading-text" id="loadingText">Capturing viewport...</div>
   <div class="loading-sub" id="loadingSub">This may take 15-60 seconds per variation</div>
 </div>
+
+<div class="particle-container" id="particles"></div>
 
 <script>
   var promptEl = document.getElementById('prompt');
@@ -411,9 +463,67 @@ PROMPT_HTML = '''<!DOCTYPE html>
     window.location.href = 'nano://' + action + '/' + encodeURIComponent(JSON.stringify(data || {}));
   }
 
+  /* Auto-generate a starting prompt */
+  var autoPrompts = [
+    "Transform this 3D model into a photorealistic architectural visualization. Add realistic material textures including warm wood, polished concrete, and reflective glass. Set the scene during golden hour with soft directional sunlight casting long shadows. Include atmospheric haze, a dramatic sky with scattered clouds, and lush green landscaping with mature trees and ground cover. Render in the style of a high-end architectural photography shoot.",
+    "Make this model look like a real photograph. Apply natural materials — brushed concrete, matte wood panels, and clear glass with subtle reflections. Light the scene with soft overcast daylight for even, diffused illumination. Add realistic surroundings: paved walkways, ornamental grasses, and a few human figures for scale. Aim for a clean, modern architectural magazine aesthetic.",
+    "Render this as a striking photorealistic scene at blue hour, just after sunset. Add warm interior lighting glowing through windows contrasting against the cool twilight sky. Materials should include exposed concrete, dark timber cladding, and floor-to-ceiling glazing. Surround with minimal landscaping, wet pavement reflections, and a moody atmospheric quality. Style: cinematic architectural visualization.",
+    "Convert this wireframe into a photorealistic daytime render. Use white stucco walls, natural stone accents, and large glass panels with realistic reflections. Bright midday sun with crisp shadows and a vivid blue sky. Add context: a gravel driveway, potted olive trees, Mediterranean-style landscaping. Render quality should match a V-Ray or Corona production shot."
+  ];
+
+  function autoPrompt() {
+    var idx = Math.floor(Math.random() * autoPrompts.length);
+    promptEl.value = autoPrompts[idx];
+    charCountEl.textContent = promptEl.value.length;
+    showStatus('Auto prompt loaded — edit to customize!', 'success');
+    setTimeout(hideStatus, 2500);
+  }
+
+  /* Particle burst effect on generate */
+  function spawnParticles(x, y) {
+    var container = document.getElementById('particles');
+    var colors = ['#e94560', '#ff6b81', '#fff', '#ff4757', '#0abde3'];
+    for (var i = 0; i < 24; i++) {
+      var p = document.createElement('div');
+      p.className = 'particle';
+      var angle = (Math.PI * 2 * i) / 24 + (Math.random() - 0.5) * 0.5;
+      var dist = 60 + Math.random() * 120;
+      var dx = Math.cos(angle) * dist;
+      var dy = Math.sin(angle) * dist;
+      var size = 3 + Math.random() * 4;
+      p.style.cssText = 'left:' + x + 'px;top:' + y + 'px;width:' + size + 'px;height:' + size + 'px;background:' + colors[i % colors.length] + ';animation-duration:' + (0.5 + Math.random() * 0.5) + 's;';
+      p.style.setProperty('--dx', dx + 'px');
+      p.style.setProperty('--dy', dy + 'px');
+      p.style.animation = 'none';
+      p.offsetHeight;
+      p.style.animation = '';
+      p.style.animationName = 'particle-fly';
+      p.style.animationDuration = (0.5 + Math.random() * 0.5) + 's';
+      p.style.animationFillMode = 'forwards';
+      p.style.animationTimingFunction = 'cubic-bezier(0,0,0.2,1)';
+      // Use custom translate for each particle
+      p.animate([
+        { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+        { transform: 'translate(' + dx + 'px, ' + dy + 'px) scale(0)', opacity: 0 }
+      ], { duration: 500 + Math.random() * 400, easing: 'cubic-bezier(0,0,0.2,1)', fill: 'forwards' });
+      container.appendChild(p);
+      setTimeout(function(el) { el.remove(); }.bind(null, p), 1000);
+    }
+  }
+
   function startRender() {
     var prompt = promptEl.value.trim();
     if (!prompt) { showStatus('Enter a render prompt', 'error'); return; }
+
+    // Button launch effect
+    var btn = document.getElementById('renderBtn');
+    btn.classList.add('launching');
+    setTimeout(function() { btn.classList.remove('launching'); }, 600);
+
+    // Particle burst from button center
+    var rect = btn.getBoundingClientRect();
+    spawnParticles(rect.left + rect.width / 2, rect.top + rect.height / 2);
+
     doAction('render', {
       prompt: prompt,
       num: document.getElementById('numOptions').value,
@@ -465,16 +575,16 @@ RESULTS_HTML_TEMPLATE = '''<!DOCTYPE html>
 <meta charset="UTF-8">
 <style>
   :root {{
-    --bg-primary: #1a1a2e; --bg-card: #1e2a47; --bg-input: #0f1629;
-    --border: #2a3a5c; --text-primary: #e8e8e8; --text-secondary: #a0a8c0;
-    --text-muted: #6b7394; --accent: #e94560; --accent-hover: #ff6b81;
-    --accent-glow: rgba(233,69,96,0.3); --success: #2ed573;
-    --gradient-start: #e94560; --gradient-end: #0abde3;
+    --bg-primary: #0a0a0a; --bg-card: #141414; --bg-input: #0e0e0e;
+    --border: #222; --text-primary: #f0f0f0; --text-secondary: #999;
+    --text-muted: #555; --accent: #e94560; --accent-hover: #ff6b81;
+    --accent-glow: rgba(233,69,96,0.35); --success: #2ed573;
+    --gradient-start: #e94560; --gradient-end: #ff6b81;
   }}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-primary); color: var(--text-primary); padding: 20px; overflow-y: auto; }}
   .header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }}
-  .header h1 {{ font-size: 18px; font-weight: 700; background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+  .header h1 {{ font-size: 18px; font-weight: 800; letter-spacing: -0.5px; background: linear-gradient(135deg, #fff 0%, var(--gradient-start) 50%, var(--gradient-end) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
   .tabs {{ display: flex; gap: 4px; background: var(--bg-input); border-radius: 8px; padding: 3px; margin-bottom: 16px; overflow-x: auto; }}
   .tab {{ flex: 1; padding: 8px 16px; border: none; border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit; white-space: nowrap; }}
   .tab.active {{ background: var(--accent); color: white; }}
